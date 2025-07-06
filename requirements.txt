@@ -12,3 +12,4 @@ python-dotenv~=1.0.1
 yookassa~=3.0.1            
 peewee==3.16.2       
 pytz
+qrcode[Pil]

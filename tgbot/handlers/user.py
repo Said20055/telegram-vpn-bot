@@ -1,6 +1,6 @@
 from aiogram import Router, F, Bot
 from aiogram.filters import CommandStart, Command, CommandObject
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, BufferedInputFile
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 # --- ИЗМЕНЕНИЯ В ИМПОРТАХ ---
 # 1. Импортируем Bot из aiogram, т.к. теперь он передается в хендлеры
@@ -9,8 +9,11 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from tgbot.keyboards.inline import (main_menu_keyboard, help_keyboard, 
                                     back_to_main_menu_keyboard, tariffs_keyboard)
 # 4. Импортируем наш модуль для работы с БД
+from datetime import datetime
 from database import requests as db
 from tgbot.services import payment
+from tgbot.services.qr_generator import create_qr_code 
+from marzban.init_client import MarzClientCache
 from utils import logger
 import logging
 
@@ -208,11 +211,155 @@ async def select_tariff_handler(call: CallbackQuery, bot: Bot):
 # --- Здесь будут обработчики для кнопок "Получить VPN" и "Мой профиль" ---
 # Пока что сделаем заглушки
 
-@user_router.callback_query(F.data == "get_vpn")
-async def get_vpn_handler(call: CallbackQuery):
-    await call.answer("Раздел 'Получить VPN' в разработке.", show_alert=True)
 
 @user_router.callback_query(F.data == "my_profile")
-async def my_profile_handler(call: CallbackQuery):
-    # Здесь в будущем будет информация о подписке пользователя
-    await call.answer("Раздел 'Мой профиль' в разработке.", show_alert=True)
+async def my_profile_handler(call: CallbackQuery, marzban: MarzClientCache):
+    await call.answer()
+    user_id = call.from_user.id
+    user = db.get_user(user_id)
+
+    # 1. Проверяем, есть ли у пользователя подписка в нашей БД
+    if not user or not user.marzban_username:
+        await call.message.edit_text(
+            "У вас еще нет активной подписки. Пожалуйста, оплатите тариф, чтобы получить доступ.",
+            reply_markup=back_to_main_menu_keyboard()
+        )
+        return
+
+    # 2. Получаем актуальные данные из Marzban
+    try:
+        user_obj = await marzban.get_user(user.marzban_username)
+        if not user_obj:
+            raise ValueError("User not found in Marzban panel")
+    except Exception as e:
+        logger.error(f"Failed to get user {user.marzban_username} from Marzban: {e}", exc_info=True)
+        await call.message.edit_text(
+            "Не удалось получить данные о вашей подписке. Пожалуйста, обратитесь в поддержку.",
+            reply_markup=back_to_main_menu_keyboard()
+        )
+        return
+    
+    # 3. УНИВЕРСАЛЬНАЯ ЛОГИКА ДЛЯ ФОРМАТИРОВАНИЯ
+    
+    # Вспомогательная функция для безопасного получения атрибутов
+    def get_attr(obj, key, default=None):
+        if isinstance(obj, dict):
+            return obj.get(key, default)
+        return getattr(obj, key, default)
+        
+    def format_traffic(byte_count):
+        if byte_count is None: return "Неизвестно"
+        if byte_count == 0: return "0 Гб"
+        power = 1024
+        n = 0
+        power_labels = {0: '', 1: 'Кб', 2: 'Мб', 3: 'Гб'}
+        while byte_count >= power and n < len(power_labels) -1 :
+            byte_count /= power
+            n += 1
+        return f"{byte_count:.2f} {power_labels[n]}"
+
+    # Извлекаем данные, используя нашу безопасную функцию
+    expire_ts = get_attr(user_obj, 'expire')
+    expire_date = datetime.fromtimestamp(expire_ts).strftime('%d.%m.%Y %H:%M') if expire_ts else "Никогда"
+
+    used_traffic = get_attr(user_obj, 'used_traffic', 0)
+    data_limit = get_attr(user_obj, 'data_limit')
+    
+    used_traffic_str = format_traffic(used_traffic)
+    data_limit_str = "Безлимит" if data_limit == 0 or data_limit is None else format_traffic(data_limit)
+
+    status = get_attr(user_obj, 'status', 'unknown')
+    sub_url = get_attr(user_obj, 'subscription_url', '')
+
+    # Marzban возвращает относительный URL, делаем его полным
+    full_subscription_url = f"https://{marzban._config.webhook.domain}{sub_url}"
+
+    # 4. Собираем текст сообщения
+    profile_text = (
+        f"👤 **Ваш профиль**\n\n"
+        f"🔑 **Статус:** `{status}`\n"
+        f"🗓 **Подписка активна до:** `{expire_date}`\n\n"
+        f"📊 **Трафик:**\n"
+        f"Использовано: `{used_traffic_str}`\n"
+        f"Лимит: `{data_limit_str}`\n\n"
+        f"🔗 **Ссылка для подписки (нажмите, чтобы скопировать):**\n`{full_subscription_url}`"
+    )
+
+    # 5. Генерируем QR-код и отправляем его
+    try:
+        if not full_subscription_url:
+            raise ValueError("Subscription URL is empty, can't generate QR code.")
+
+        qr_code_image = create_qr_code(full_subscription_url)
+        qr_photo = BufferedInputFile(qr_code_image.read(), filename="subscription_qr.png")
+        
+        await call.message.delete()
+        await call.message.answer_photo(
+            photo=qr_photo,
+            caption=profile_text,
+            reply_markup=back_to_main_menu_keyboard()
+        )
+    except Exception as e:
+        logger.error(f"Failed to send profile with QR code: {e}", exc_info=True)
+        # Если отправка с фото не удалась, отправим просто текст
+        await call.message.answer(profile_text, reply_markup=back_to_main_menu_keyboard())
+        
+@user_router.callback_query(F.data == "my_keys")
+async def my_keys_handler(call: CallbackQuery, marzban: MarzClientCache):
+    await call.answer()
+    user_id = call.from_user.id
+    user = db.get_user(user_id)
+
+    # 1. Проверяем, есть ли у пользователя подписка
+    if not user or not user.marzban_username:
+        await call.message.edit_text(
+            "У вас еще нет ключей. Пожалуйста, оплатите тариф, чтобы получить доступ.",
+            reply_markup=back_to_main_menu_keyboard()
+        )
+        return
+
+    # 2. Получаем актуальные данные из Marzban
+    try:
+        user_obj = await marzban.get_user(user.marzban_username)
+        if not user_obj:
+            raise ValueError("User not found in Marzban panel")
+    except Exception as e:
+        logger.error(f"Failed to get user {user.marzban_username} from Marzban for keys: {e}", exc_info=True)
+        await call.message.edit_text(
+            "Не удалось получить данные о ваших ключах. Пожалуйста, обратитесь в поддержку.",
+            reply_markup=back_to_main_menu_keyboard()
+        )
+        return
+        
+    # Вспомогательная функция для безопасного получения атрибутов
+    def get_attr(obj, key, default=None):
+        if isinstance(obj, dict):
+            return obj.get(key, default)
+        return getattr(obj, key, default)
+
+    # 3. Извлекаем список ссылок-ключей
+    links = get_attr(user_obj, 'links', [])
+
+    if not links:
+        await call.message.edit_text(
+            "К сожалению, для вашей подписки не найдено ключей. Обратитесь в поддержку.",
+            reply_markup=back_to_main_menu_keyboard()
+        )
+        return
+
+    # 4. Форматируем ключи для отправки
+    # Оборачиваем каждую ссылку в `...` для удобного копирования в Telegram
+    formatted_links = [f"`{link}`" for link in links]
+    
+    message_text = (
+        "🔑 **Вот ваши ключи для подключения:**\n\n"
+        "Нажмите на ключ, чтобы скопировать его, а затем вставьте в вашем VPN-клиенте.\n\n" +
+        "\n\n".join(formatted_links) # Разделяем ключи двойным переносом строки
+    )
+
+    # 5. Отправляем сообщение
+    await call.message.edit_text(
+        text=message_text,
+        reply_markup=back_to_main_menu_keyboard(),
+        disable_web_page_preview=True # Отключаем превью ссылок, чтобы не было мусора
+    )

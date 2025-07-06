@@ -11,14 +11,14 @@ def main_menu_keyboard():  # Переименовал keyboard_start для яс
     """
     builder = InlineKeyboardBuilder()
     # Новые кнопки в соответствии с нашей логикой
-    builder.button(text='💎 Получить VPN', callback_data='get_vpn')
+    builder.button(text='🔑 Мои ключи', callback_data='my_keys')
     builder.button(text='👤 Мой профиль', callback_data='my_profile')
     builder.button(text='🤝 Реферальная программа', callback_data='referral_program')
     builder.button(text='ℹ️ Помощь', callback_data='help_info')
     builder.button(text='💎 Продлить / Оплатить', callback_data='buy_subscription')
     
     # Расставляем кнопки по 2 в ряд, последняя будет одна на всю ширину
-    builder.adjust(2, 1)
+    builder.adjust(2, 2, 1)
     return builder.as_markup()
 
 def tariffs_keyboard(tariffs: list[Tariff]):
