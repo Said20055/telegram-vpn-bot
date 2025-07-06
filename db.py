@@ -1,74 +1,85 @@
-import psycopg2
-from psycopg2.extras import RealDictCursor
-from datetime import datetime, timedelta
-import os
-from dotenv import load_dotenv
+import datetime
+from peewee import (Model, PostgresqlDatabase, BigIntegerField, CharField, DateTimeField,
+                    BooleanField, ForeignKeyField, IntegerField, FloatField)
 
-load_dotenv()  # Загрузим переменные из .env
+# Исправляем путь импорта в соответствии с вашей структурой проекта
+from config import load_config 
 
-DB_CONFIG = {
-    "dbname": os.getenv("DB_NAME"),
-    "user": os.getenv("DB_USER"),
-    "password": os.getenv("DB_PASSWORD"),
-    "host": os.getenv("DB_HOST", "localhost"),
-    "port": os.getenv("DB_PORT", "5432"),
-}
+# Загружаем конфигурацию
+config = load_config()
+db_config = config.dataBase
 
-
-def get_conn():
-    return psycopg2.connect(**DB_CONFIG, cursor_factory=RealDictCursor)
-
-
-def get_user(telegram_id: int):
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT * FROM users WHERE telegram_id = %s", (telegram_id,))
-            return cur.fetchone()
+# Подключаемся к PostgreSQL, используя ваши данные из config
+db = PostgresqlDatabase(
+    db_config.db_name,
+    user=db_config.user,
+    password=db_config.password,
+    host=db_config.host,
+    port=db_config.port
+)
 
 
-def create_user(telegram_id: int, referred_by: int = None):
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO users (telegram_id, referral_code, referred_by)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (telegram_id) DO NOTHING
-            """, (telegram_id, f"ref_{telegram_id}", referred_by))
-            conn.commit()
+class BaseModel(Model):
+    class Meta:
+        database = db
+
+class Tariff(BaseModel):
+    id = IntegerField(primary_key=True)
+    name = CharField()                     # Например, "1 месяц"
+    price = FloatField()                   # Цена в рублях, например, 100.00
+    duration_days = IntegerField()         # Срок подписки в днях, например, 30
+    is_active = BooleanField(default=True) # Флаг, чтобы можно было временно отключать тариф
+
+    class Meta:
+        table_name = "tariffs"
+class User(BaseModel):
+    user_id = BigIntegerField(primary_key=True)  # Используем BigIntegerField для Telegram ID
+    username = CharField(null=True)
+    full_name = CharField()
+    reg_date = DateTimeField(default=datetime.datetime.now)
+    
+    # Поля для подписки
+    subscription_end_date = DateTimeField(null=True)
+    marzban_username = CharField(unique=True, null=True)  # Имя пользователя в Marzban
+
+    # Поля для реферальной системы
+    # --- ИСПРАВЛЕНО: Убран backref='referrals' для предотвращения RecursionError ---
+    referrer_id = ForeignKeyField('self', null=True, on_delete='SET NULL') 
+    
+    referral_bonus_days = IntegerField(default=0)
+    is_first_payment_made = BooleanField(default=False)
+
+    class Meta:
+        # Указываем имя таблицы в нижнем регистре, как принято в PostgreSQL
+        table_name = "users" 
 
 
-def mark_user_paid(telegram_id: int, days: int = 30):
-    paid_until = datetime.utcnow() + timedelta(days=days)
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                UPDATE users
-                SET is_paid = TRUE,
-                    paid_until = %s
-                WHERE telegram_id = %s
-            """, (paid_until, telegram_id))
-            conn.commit()
+def setup_database():
+    """Инициализирует базу данных: подключается и создает таблицы, если их нет."""
+    try:
+        db.connect()
+        # Добавляем Tariff в список создаваемых таблиц
+        db.create_tables([User, Tariff])
+        print("INFO: Database connection successful. Tables User, Tariff created or already exist.")
+        
+        # --- Первоначальное заполнение тарифов ---
+        # Эта функция сработает один раз, если таблица пуста
+        if Tariff.select().count() == 0:
+            initial_fill_tariffs()
 
+    except Exception as e:
+        print(f"ERROR: Database connection failed: {e}")
+    finally:
+        if not db.is_closed():
+            db.close()
 
-def is_user_paid(telegram_id: int):
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT is_paid, paid_until
-                FROM users
-                WHERE telegram_id = %s
-            """, (telegram_id,))
-            row = cur.fetchone()
-            if row and row["is_paid"] and row["paid_until"] > datetime.utcnow():
-                return True
-            return False
-
-
-def save_payment(telegram_id: int, yookassa_id: str, amount: float, status: str):
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO payments (telegram_id, yookassa_id, amount, status)
-                VALUES (%s, %s, %s, %s)
-            """, (telegram_id, yookassa_id, amount, status))
-            conn.commit()
+def initial_fill_tariffs():
+    """Заполняет таблицу тарифов начальными значениями."""
+    tariffs_data = [
+        {'name': '1 месяц', 'price': 100.0, 'duration_days': 30},
+        {'name': '3 месяца', 'price': 250.0, 'duration_days': 90},
+        {'name': '1 год', 'price': 900.0, 'duration_days': 365}
+    ]
+    with db.atomic():
+        Tariff.insert(tariffs_data).execute()
+    print("INFO: Initial tariffs have been added to the database.")

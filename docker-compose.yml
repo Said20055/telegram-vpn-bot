@@ -48,6 +48,8 @@ services:
         max-file: "10"
   vpn_bot:
     image: free_vpn_bot
+    ports:
+      - "8081:8081"
     container_name: free_vpn_bot
     stop_signal: SIGINT
     build:

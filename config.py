@@ -14,6 +14,32 @@ class TgBot:
         admin_id = env.int("ADMIN")
 
         return TgBot(token=token, admin_id=admin_id)
+@dataclass
+class YooKassa:
+    shop_id: str
+    secret_key: str
+
+    @staticmethod
+    def from_env(env: Env):
+        shop_id = env.str("YOOKASSA_SHOP_ID")
+        secret_key = env.str("YOOKASSA_SECRET_KEY")
+        return YooKassa(shop_id=shop_id, secret_key=secret_key)
+@dataclass
+class DataBase:
+    host: str
+    port: str
+    user: str
+    password: str
+    db_name: str
+
+    @staticmethod
+    def from_env(env: Env):
+        host = env.str("DB_HOST")
+        port = env.str("DB_PORT")
+        user = env.str("DB_USER")
+        password = env.str("DB_PASSWORD")
+        db_name = env.str("DB_NAME")
+        return DataBase(host=host, port=port, user=user, password=password, db_name=db_name)
 
 
 @dataclass
@@ -53,6 +79,8 @@ class Config:
     tg_bot: TgBot
     webhook: Webhook
     marzban: Marzban
+    dataBase: DataBase
+    yookassa: YooKassa
 
 
 def load_config():
@@ -64,5 +92,7 @@ def load_config():
     return Config(
         tg_bot=TgBot.from_env(env),
         webhook=Webhook.from_env(env),
-        marzban=Marzban.from_env(env, env_marz)
+        marzban=Marzban.from_env(env, env_marz),
+        dataBase=DataBase.from_env(env),
+        yookassa=YooKassa.from_env(env)
     )
