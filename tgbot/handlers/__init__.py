@@ -1,11 +1,13 @@
-from tgbot.handlers.cancel import cancel_router
-from tgbot.handlers.user import user_router
-from tgbot.handlers.vpn_settings import vpn_router
 
+from tgbot.handlers.user import user_router
+from .admin.main import admin_main_router
+from .admin.users import admin_users_router
+
+# Собираем все роутеры в один список
 routers_list = [
-    cancel_router,
     user_router,
-    vpn_router
+    admin_main_router,
+    admin_users_router,
 ]
 
 __all__ = [

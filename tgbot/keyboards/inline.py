@@ -59,3 +59,24 @@ def back_to_main_menu_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text='⬅️ Назад в главное меню', callback_data='back_to_main_menu')
     return builder.as_markup()
+
+def admin_main_menu_keyboard():
+    """Главное меню админ-панели."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="👤 Управление пользователями", callback_data="admin_users_menu")
+    builder.button(text="📈 Статистика", callback_data="admin_stats")
+    # Добавим позже:
+    # builder.button(text="💳 Управление тарифами", callback_data="admin_tariffs_menu")
+    # builder.button(text="📢 Рассылка", callback_data="admin_broadcast")
+    builder.adjust(1)
+    return builder.as_markup()
+
+def user_manage_keyboard(user_id: int):
+    """Клавиатура для управления конкретным пользователем."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Добавить дни", callback_data=f"admin_add_days_{user_id}")
+    builder.button(text="🔄 Сбросить ключ", callback_data=f"admin_reset_user_{user_id}")
+    builder.button(text="🗑 Удалить пользователя", callback_data=f"admin_delete_user_{user_id}")
+    builder.button(text="⬅️ Назад к поиску", callback_data="admin_users_menu")
+    builder.adjust(1)
+    return builder.as_markup()

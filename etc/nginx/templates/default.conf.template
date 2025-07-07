@@ -2,7 +2,6 @@ server {
     root /var/www/html;
     index index.html;
 
-    # --- Ваши настройки прослушивания портов ---
     listen [::]:80;
     listen 80;
     listen [::]:443 ssl;
@@ -12,61 +11,55 @@ server {
 
     server_name $DOMAIN *.$DOMAIN;
 
-    # --- Ваши SSL настройки ---
     ssl_certificate /etc/nginx/certs/fullchain.pem;
     ssl_certificate_key /etc/nginx/certs/privkey.pem;
+
     ssl_session_cache shared:le_nginx_SSL:10m;
     ssl_session_timeout 1440m;
     ssl_session_tickets off;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers off;
     ssl_ciphers HIGH:!aNULL:!MD5;
-
-    # --- Ваши настройки IP ---
     set_real_ip_from 127.0.0.1;
     real_ip_header proxy_protocol;
-
-    # === НАЧАЛО ВАЖНЫХ ИЗМЕНЕНИЙ ===
-
-    # Мы добавляем этот блок ПЕРЕД блоком для Marzban.
-    # Nginx обрабатывает location-блоки по порядку, и первый совпавший выигрывает.
-    # Поэтому /yookassa нужно обработать до /api, чтобы запрос не ушел в Marzban.
-
+    
+    # =================================================================
+    # === БЛОК ДЛЯ YOOKASSA (ЕДИНСТВЕННОЕ ИЗМЕНЕНИЕ) ===
+    # =================================================================
+    # Этот блок должен стоять ПЕРЕД блоком для Marzban,
+    # чтобы перехватывать запросы на /yookassa первым.
     location = /yookassa {
         # Перенаправляем запрос на сервис 'vpn_bot' на порт 8081,
-        # где наш aiohttp сервер слушает вебхуки YooKassa.
-        # Используем http, так как внутри сети Docker нет SSL.
+        # где наш aiohttp сервер слушает вебхуки.
         proxy_pass http://vpn_bot:8081;
 
-        # Передаем важные заголовки, чтобы наш бот
-        # при необходимости мог узнать реальный IP и домен.
+        # Передаем важные заголовки.
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
+    # =================================================================
+    # === КОНЕЦ БЛОКА ДЛЯ YOOKASSA ===
+    # =================================================================
 
-    # === КОНЕЦ ВАЖНЫХ ИЗМЕНЕНИЙ ===
 
-    # --- Ваш существующий блок для Marzban ---
-    # Он перехватывает все запросы, связанные с панелью.
+    # --- Ваш оригинальный блок для Marzban ---
     location ~* ^/(dashboard|api|sub|statics)(/|$) {
-        # ВАЖНОЕ ИСПРАВЛЕНИЕ: Используйте имя сервиса из docker-compose, а не container_name.
-        # И используйте http для внутреннего трафика.
-        proxy_pass http://marzban:8002;
-        
+        # Используем имя сервиса 'marzban', а не 'free_vpn_bot_marzban'
+        proxy_pass https://marzban:8002;
+            proxy_ssl_verify off;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Host $server_name;
 
-        # Настройки для поддержки WebSocket (нужны для логов в панели Marzban)
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
     }
 
-    # --- Ваши страницы ошибок ---
+
     error_page 404 /custom_404.html;
     location = /custom_404.html {
         root /usr/share/nginx/html;

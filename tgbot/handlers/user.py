@@ -1,5 +1,3 @@
-# tgbot/handlers/user.py (финальная, чистая версия с HTML)
-
 from aiogram import Router, F, Bot
 from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.types import Message, CallbackQuery, BufferedInputFile
@@ -36,12 +34,12 @@ user_router = Router()
 # =============================================================================
 
 @user_router.message(CommandStart(deep_link=True, magic=F.args.startswith('ref')))
-async def start_with_referral(message: Message, command: CommandObject, bot: Bot):
-    """Обрабатывает запуск бота по реферальной ссылке."""
+async def start_with_referral(message: Message, command: CommandObject, bot: Bot, marzban: MarzClientCache):
+    """Обрабатывает запуск бота по реферальной ссылке и активирует стартовый бонус."""
     user_id = message.from_user.id
     full_name = message.from_user.full_name
     username = message.from_user.username
-    
+
     referrer_id = None
     try:
         potential_referrer_id = int(command.args[3:])
@@ -52,19 +50,39 @@ async def start_with_referral(message: Message, command: CommandObject, bot: Bot
 
     user, created = db.get_or_create_user(user_id, full_name, username)
 
+    # --- ИЗМЕНЕННАЯ ЛОГИКА ---
+    # Активируем бонус только для абсолютно новых пользователей
     if created and referrer_id:
-        db.set_user_referrer(user_id, referrer_id)
-        db.add_bonus_days(user_id, 3)
-        await message.answer("🎉 Добро пожаловать! Вы пришли по приглашению и получили <b>3 бонусных дня</b> подписки!")
+        bonus_days = 3
+
+        # 1. Создаем пользователя в Marzban с подпиской на бонусные дни
+        marzban_username = f"user_{user_id}"
         try:
-            await bot.send_message(referrer_id, f"По вашей ссылке зарегистрировался новый пользователь: {full_name}!")
+            await marzban.add_user(username=marzban_username, expire_days=bonus_days)
+            logger.info(f"Successfully created Marzban user '{marzban_username}' with {bonus_days} bonus days.")
+
+            # 2. Обновляем данные в нашей БД
+            db.set_user_referrer(user_id, referrer_id)
+            db.update_user_marzban_username(user_id, marzban_username)
+            db.extend_user_subscription(user_id, days=bonus_days) # Устанавливаем дату окончания подписки
+
+            # 3. Отправляем уведомления
+            await message.answer(f"🎉 Добро пожаловать! Вы пришли по приглашению и получили <b>пробную подписку на {bonus_days} дня</b>!")
+            try:
+                await bot.send_message(referrer_id, f"По вашей ссылке зарегистрировался новый пользователь: {full_name}!")
+            except Exception as e:
+                logger.error(f"Could not send notification to referrer {referrer_id}: {e}")
+
         except Exception as e:
-            logger.error(f"Could not send notification to referrer {referrer_id}: {e}")
+            # Если не удалось создать юзера в Marzban, сообщаем об ошибке
+            logger.error(f"Failed to create Marzban user for referral bonus for user {user_id}: {e}")
+            await message.answer("Произошла ошибка при активации вашего стартового бонуса. Пожалуйста, попробуйте позже или обратитесь в поддержку.")
+
     elif not created:
         await message.answer("Вы уже зарегистрированы в боте. Реферальная ссылка работает только для новых пользователей.")
 
+    # В любом случае показываем главное меню
     await message.answer(f'👋 Привет, {full_name}!', reply_markup=main_menu_keyboard())
-
 
 @user_router.message(CommandStart())
 async def user_start_default(message: Message):
@@ -73,7 +91,7 @@ async def user_start_default(message: Message):
     full_name = message.from_user.full_name
     username = message.from_user.username
     db.get_or_create_user(user_id, full_name, username)
-    
+
     await message.answer(
         f'👋 Привет, {full_name}!\n\n'
         'Я помогу тебе с VPN.\n'
@@ -109,7 +127,7 @@ async def referral_program_handler(call: CallbackQuery, bot: Bot):
     referral_link = f"https://t.me/{bot_info.username}?start=ref{user_id}"
     user_data = db.get_user(user_id)
     referral_count = db.count_user_referrals(user_id)
-    
+
     text = (
         "🤝 <b>Ваша реферальная программа</b>\n\n"
         "Приглашайте друзей и получайте за это приятные бонусы!\n\n"
@@ -127,7 +145,7 @@ async def referral_program_handler(call: CallbackQuery, bot: Bot):
 async def my_profile_handler(call: CallbackQuery, marzban: MarzClientCache):
     """Показывает профиль пользователя с данными из Marzban и QR-кодом."""
     await call.answer("Загружаю информацию...")
-    
+
     db_user, marzban_user = await get_marzban_user_info(call, marzban)
     if not marzban_user:
         return
@@ -135,7 +153,7 @@ async def my_profile_handler(call: CallbackQuery, marzban: MarzClientCache):
     status = get_user_attribute(marzban_user, 'status', 'unknown')
     expire_ts = get_user_attribute(marzban_user, 'expire')
     expire_date = datetime.fromtimestamp(expire_ts).strftime('%d.%m.%Y %H:%M') if expire_ts else "Никогда"
-    
+
     used_traffic = get_user_attribute(marzban_user, 'used_traffic', 0)
     data_limit = get_user_attribute(marzban_user, 'data_limit')
     used_traffic_str = format_traffic(used_traffic)
@@ -158,14 +176,14 @@ async def my_profile_handler(call: CallbackQuery, marzban: MarzClientCache):
         full_sub_url = get_user_attribute(marzban_user, 'subscription_url', '')
         if not full_sub_url:
             raise ValueError("Subscription URL is empty, can't generate QR code.")
-        
+
         # Marzban возвращает относительный URL, делаем его полным
         full_sub_url = f"https://{marzban._config.webhook.domain}{full_sub_url}"
 
         # --- ИСПРАВЛЕННАЯ ЛОГИКА ---
         qr_code_stream = qr_generator.create_qr_code(full_sub_url)
         qr_photo = BufferedInputFile(qr_code_stream.getvalue(), filename="qr.png")
-        
+
         # Сначала удаляем старое сообщение, чтобы избежать конфликтов
         await call.message.delete()
         # Отправляем новое с фото
@@ -187,7 +205,7 @@ async def my_profile_handler(call: CallbackQuery, marzban: MarzClientCache):
 async def my_keys_handler(call: CallbackQuery, marzban: MarzClientCache):
     """Показывает пользователю его ключи для подключения."""
     await call.answer()
-    
+
     db_user, marzban_user = await get_marzban_user_info(call, marzban)
     if not marzban_user:
         return
@@ -232,7 +250,7 @@ async def my_keys_handler(call: CallbackQuery, marzban: MarzClientCache):
             reply_markup=reply_markup,
             disable_web_page_preview=True
         )
-        
+
 # =============================================================================
 # --- БЛОК: ПОКУПКА И ОПЛАТА ---
 # =============================================================================
@@ -243,7 +261,7 @@ async def buy_subscription_handler(call: CallbackQuery):
     await call.answer()
     active_tariffs = db.get_active_tariffs()
     tariffs_list = list(active_tariffs) if active_tariffs else []
-        
+
     if not tariffs_list:
         logger.error("No active tariffs found for user %s.", call.from_user.id)
         await call.message.edit_text(
@@ -251,7 +269,7 @@ async def buy_subscription_handler(call: CallbackQuery):
             reply_markup=back_to_main_menu_keyboard()
         )
         return
-        
+
     await call.message.edit_text(
         "Пожалуйста, выберите тарифный план:",
         reply_markup=tariffs_keyboard(tariffs_list)
@@ -267,7 +285,7 @@ async def select_tariff_handler(call: CallbackQuery, bot: Bot):
     except (IndexError, ValueError):
         await call.message.edit_text("Ошибка! Некорректный тариф.", reply_markup=back_to_main_menu_keyboard())
         return
-    
+
     tariff = db.get_tariff_by_id(tariff_id)
     if not tariff:
         await call.message.edit_text("Ошибка! Тариф не найден.", reply_markup=back_to_main_menu_keyboard())
@@ -280,12 +298,12 @@ async def select_tariff_handler(call: CallbackQuery, bot: Bot):
         bot_username=(await bot.get_me()).username,
         metadata={'user_id': str(call.from_user.id), 'tariff_id': tariff_id}
     )
-    
+
     payment_kb = InlineKeyboardBuilder()
     payment_kb.button(text="💳 Перейти к оплате", url=payment_url)
     payment_kb.button(text="⬅️ Назад к выбору тарифа", callback_data="buy_subscription")
     payment_kb.adjust(1)
-    
+
     await call.message.edit_text(
         f"Вы выбрали тариф: <b>{tariff.name}</b>\n"
         f"Срок: <b>{tariff.duration_days} дней</b>\n"
@@ -305,7 +323,7 @@ async def back_to_main_menu_handler(call: CallbackQuery):
     await call.answer()
     text = f'👋 Привет, {call.from_user.full_name}!'
     reply_markup = main_menu_keyboard()
-    
+
     try:
         await call.message.edit_text(text, reply_markup=reply_markup)
     except TelegramBadRequest:
@@ -314,3 +332,4 @@ async def back_to_main_menu_handler(call: CallbackQuery):
         except TelegramBadRequest:
             pass
         await call.message.answer(text, reply_markup=reply_markup)
+
