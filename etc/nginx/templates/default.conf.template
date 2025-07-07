@@ -2,6 +2,7 @@ server {
     root /var/www/html;
     index index.html;
 
+    # --- Ваши настройки прослушивания портов ---
     listen [::]:80;
     listen 80;
     listen [::]:443 ssl;
@@ -11,9 +12,9 @@ server {
 
     server_name $DOMAIN *.$DOMAIN;
 
+    # --- Ваши SSL настройки ---
     ssl_certificate /etc/nginx/certs/fullchain.pem;
     ssl_certificate_key /etc/nginx/certs/privkey.pem;
-
     ssl_session_cache shared:le_nginx_SSL:10m;
     ssl_session_timeout 1440m;
     ssl_session_tickets off;
@@ -21,25 +22,51 @@ server {
     ssl_prefer_server_ciphers off;
     ssl_ciphers HIGH:!aNULL:!MD5;
 
+    # --- Ваши настройки IP ---
     set_real_ip_from 127.0.0.1;
     real_ip_header proxy_protocol;
 
+    # === НАЧАЛО ВАЖНЫХ ИЗМЕНЕНИЙ ===
 
+    # Мы добавляем этот блок ПЕРЕД блоком для Marzban.
+    # Nginx обрабатывает location-блоки по порядку, и первый совпавший выигрывает.
+    # Поэтому /yookassa нужно обработать до /api, чтобы запрос не ушел в Marzban.
 
+    location = /yookassa {
+        # Перенаправляем запрос на сервис 'vpn_bot' на порт 8081,
+        # где наш aiohttp сервер слушает вебхуки YooKassa.
+        # Используем http, так как внутри сети Docker нет SSL.
+        proxy_pass http://vpn_bot:8081;
+
+        # Передаем важные заголовки, чтобы наш бот
+        # при необходимости мог узнать реальный IP и домен.
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # === КОНЕЦ ВАЖНЫХ ИЗМЕНЕНИЙ ===
+
+    # --- Ваш существующий блок для Marzban ---
+    # Он перехватывает все запросы, связанные с панелью.
     location ~* ^/(dashboard|api|sub|statics)(/|$) {
-        proxy_pass https://free_vpn_bot_marzban:8002;
-	proxy_ssl_verify off;
+        # ВАЖНОЕ ИСПРАВЛЕНИЕ: Используйте имя сервиса из docker-compose, а не container_name.
+        # И используйте http для внутреннего трафика.
+        proxy_pass http://marzban:8002;
+        
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Host $server_name;
 
+        # Настройки для поддержки WebSocket (нужны для логов в панели Marzban)
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
     }
 
-
+    # --- Ваши страницы ошибок ---
     error_page 404 /custom_404.html;
     location = /custom_404.html {
         root /usr/share/nginx/html;
