@@ -11,21 +11,31 @@ from utils.logger import APINotificationHandler
 # Загружаем конфиг
 config = load_config()
 
+# loader.py
+
 def setup_logging():
-    """Настраивает кастомное логирование."""
-    log_level = logging.INFO
+    """Настраивает кастомное логирование с DEBUG уровнем для Aiogram."""
+    # Устанавливаем самый подробный уровень
+    log_level = logging.DEBUG 
     bl.basic_colorized_config(level=log_level)
 
+    # Устанавливаем базовый конфиг для всех логгеров
     logging.basicConfig(
         level=log_level,
         format="%(filename)s:%(lineno)d #%(levelname)-8s [%(asctime)s] - %(name)s - %(message)s",
     )
-    logger_init = logging.getLogger(__name__)
     
-    # Обработчик, который шлет ошибки админу в телеграм
-    api_handler = APINotificationHandler(config.tg_bot.token, config.tg_bot.admin_id)
-    api_handler.setLevel(logging.ERROR)
-    logger_init.addHandler(api_handler)
+    # Конкретно для логгера aiogram.event выставляем DEBUG, чтобы видеть все
+    logging.getLogger("aiogram.event").setLevel(logging.DEBUG)
+    
+    logger_init = logging.getLogger(__name__)
+
+    # Отправка критических ошибок админу
+    main_admin_id = config.tg_bot.admin_ids[0] if config.tg_bot.admin_ids else None
+    if main_admin_id:
+        api_handler = APINotificationHandler(config.tg_bot.token, main_admin_id)
+        api_handler.setLevel(logging.ERROR)
+        logger_init.addHandler(api_handler)
 
     return logger_init
 

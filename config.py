@@ -6,14 +6,16 @@ from environs import Env
 @dataclass
 class TgBot:
     token: str
-    admin_id: int
+    admin_ids: list[int]
+    support_chat_id: int
 
     @staticmethod
     def from_env(env: Env):
         token = env.str("BOT_TOKEN")
-        admin_id = env.int("ADMIN")
-
-        return TgBot(token=token, admin_id=admin_id)
+        # env.list преобразует строку "123,456" в список [123, 456]
+        admin_ids = env.list("ADMINS", subcast=int)
+        support_chat_id = env.int("SUPPORT_CHAT_ID")
+        return TgBot(token=token, admin_ids=admin_ids, support_chat_id=support_chat_id)
 @dataclass
 class YooKassa:
     shop_id: str

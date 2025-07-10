@@ -1,6 +1,6 @@
 import datetime
 from peewee import (Model, PostgresqlDatabase, BigIntegerField, CharField, DateTimeField,
-                    BooleanField, ForeignKeyField, IntegerField, FloatField)
+                    BooleanField, ForeignKeyField, IntegerField, FloatField, BigAutoField)
 
 # Исправляем путь импорта в соответствии с вашей структурой проекта
 from config import load_config 
@@ -24,7 +24,7 @@ class BaseModel(Model):
         database = db
 
 class Tariff(BaseModel):
-    id = IntegerField(primary_key=True)
+    id = BigAutoField(primary_key=True)
     name = CharField()                     # Например, "1 месяц"
     price = FloatField()                   # Цена в рублях, например, 100.00
     duration_days = IntegerField()         # Срок подписки в днях, например, 30
@@ -33,6 +33,7 @@ class Tariff(BaseModel):
     class Meta:
         table_name = "tariffs"
 class User(BaseModel):
+    support_topic_id = IntegerField(null=True)
     user_id = BigIntegerField(primary_key=True)  # Используем BigIntegerField для Telegram ID
     username = CharField(null=True)
     full_name = CharField()

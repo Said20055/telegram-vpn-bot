@@ -1,9 +1,9 @@
 import asyncio
 
-from aiogram import Dispatcher, F
+from aiogram import Dispatcher, F, Bot
 from aiogram.enums import ChatType
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import BotCommand, BotCommandScopeDefault
+from aiogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat, BotCommandScopeAllPrivateChats
 from aiogram.utils.callback_answer import CallbackAnswerMiddleware
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
@@ -33,7 +33,7 @@ async def on_startup(bot, marzban): # Добавили marzban в аргумен
     #     logger.error("Could not connect to Marzban panel!")
 
     # 2. Отправляем сообщение админу о запуске
-    await broadcaster.broadcast(bot, [config.tg_bot.admin_id], "Бот запущен")
+    await broadcaster.broadcast(bot, config.tg_bot.admin_ids, "Бот запущен")
     logger.info("Startup message sent to admin.")
 
     # 3. Устанавливаем команды меню
@@ -50,13 +50,55 @@ async def on_startup(bot, marzban): # Добавили marzban в аргумен
         logger.info("Polling mode: Webhook deleted and pending updates dropped.")
 
 
-async def register_commands(bot):
-    """Регистрирует команды в меню Telegram."""
-    commands = [
+# bot.py (или где находится ваша функция)
+
+from aiogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat
+from aiogram import Bot
+
+# ...
+
+# bot.py
+
+async def register_commands(bot: Bot):
+    logger.info("Registering bot commands...")
+
+    # --- 1. Устанавливаем команды для ВСЕХ по умолчанию ---
+    user_commands = [
         BotCommand(command='start', description='🏠 Главное меню'),
-        # ... другие команды
+        BotCommand(command='profile', description='👤 Мой профиль'),
+        BotCommand(command='payment', description='💳 Оплата'),
+        BotCommand(command='support', description='💬 Поддержка'),
+        BotCommand(command='referral', description='🤝 Реф. программа'),
+        BotCommand(command='instruction', description='📲 Инструкция'),
     ]
-    await bot.set_my_commands(commands, BotCommandScopeDefault())
+    await bot.set_my_commands(user_commands, BotCommandScopeDefault())
+
+    # --- 2. Устанавливаем РАСШИРЕННЫЕ команды для АДМИНОВ ---
+    # Этот набор ПЕРЕЗАПИШЕТ дефолтный для конкретных пользователей
+    admin_commands = user_commands + [
+        BotCommand(command='admin', description='👑 Админ-панель'),
+        BotCommand(command='cancel', description='❌ Отменить действие'),
+    ]
+    if config.tg_bot.admin_ids:
+        for admin_id in config.tg_bot.admin_ids:
+            try:
+                # Устанавливаем команды персонально для каждого админа
+                await bot.set_my_commands(admin_commands, BotCommandScopeChat(chat_id=admin_id))
+            except Exception as e:
+                logger.error(f"Failed to set admin commands for {admin_id}: {e}")
+
+    # --- 3. Устанавливаем команды для чата поддержки ---
+    support_chat_commands = [
+        BotCommand(command='close', description='🔒 Закрыть тикет'),
+    ]
+    if config.tg_bot.support_chat_id:
+        try:
+            await bot.set_my_commands(
+                support_chat_commands, 
+                BotCommandScopeChat(chat_id=config.tg_bot.support_chat_id)
+            )
+        except Exception as e:
+            logger.error(f"Failed to set support chat commands: {e}")
 
 
 def register_global_middlewares(dp: Dispatcher):
@@ -68,7 +110,6 @@ def register_global_middlewares(dp: Dispatcher):
         dp.message.outer_middleware(middleware_type)
         dp.callback_query.outer_middleware(middleware_type)
     dp.callback_query.outer_middleware(CallbackAnswerMiddleware())
-    dp.message.filter(F.chat.type == ChatType.PRIVATE)
     logger.info("Global middlewares registered.")
 
 

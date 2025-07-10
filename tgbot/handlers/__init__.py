@@ -1,15 +1,28 @@
+# tgbot/handlers/__init__.py (ФИНАЛЬНАЯ РАБОЧАЯ ВЕРСИЯ)
 
-from tgbot.handlers.user import user_router
-from .admin.main import admin_main_router
-from .admin.users import admin_users_router
+# --- 1. Импортируем все "конечные" роутеры из их файлов ---
+from .admin import admin_router
 
-# Собираем все роутеры в один список
+# --- 2. Импортируем "собранный" пользовательский роутер ---
+# Мы импортируем из пакета 'user', а __init__.py внутри него уже сделал всю работу
+from .user import user_router
+
+# --- 3. Импортируем роутер поддержки ---
+from .support import support_router
+
+# --- 4. Собираем список в правильном порядке ---
 routers_list = [
-    user_router,
-    admin_main_router,
-    admin_users_router,
+    # Самые специфичные
+    support_router,
+
+    # Админские FSM и команды
+    admin_router,
+    
+    # Общий пользовательский роутер (в котором уже есть свой порядок)
+    user_router
 ]
 
+# --- 5. Экспортируем список ---
 __all__ = [
     "routers_list",
 ]
