@@ -115,17 +115,21 @@ async def add_days_start(call: CallbackQuery, state: FSMContext):
 
 
 @admin_users_router.message(AdminFSM.add_days_amount)
-async def add_days_finish(message: Message, state: FSMContext, marzban: MarzClientCache, bot: Bot): # Добавили bot
-    """Завершение сценария добавления дней подписки (отказоустойчивая версия)."""
+async def add_days_finish(message: Message, state: FSMContext, marzban: MarzClientCache, bot: Bot):
+    """
+    Завершение сценария добавления дней подписки.
+    Продлевает подписку или создает нового пользователя в Marzban, если его нет.
+    Отправляет уведомления админу и пользователю.
+    """
     
-    # --- 1. Валидация ввода ---
+    # --- 1. Валидация ввода от администратора ---
     try:
-        if not message.text or not message.text.isdigit() or int(message.text) <= 0:
-            await message.answer("❌ **Ошибка.** Введите целое положительное число.")
-            return
         days_to_add = int(message.text)
+        if days_to_add <= 0:
+            await message.answer("❌ <b>Ошибка:</b> Введите целое положительное число.")
+            return
     except (ValueError, TypeError):
-        await message.answer("❌ **Ошибка.** Пожалуйста, введите корректное число.")
+        await message.answer("❌ <b>Ошибка:</b> Пожалуйста, введите корректное число.")
         return
 
     # --- 2. Получение данных и предварительная обратная связь ---
@@ -133,55 +137,60 @@ async def add_days_finish(message: Message, state: FSMContext, marzban: MarzClie
     user_id = data.get("user_id")
     await state.clear()
     
-    # Даем админу понять, что процесс пошел
-    await message.answer(f"⏳ Продлеваю подписку для пользователя <code>{user_id}</code> на <b>{days_to_add}</b> дн...")
+    await message.answer(f"⏳ Продлеваю/создаю подписку для пользователя <code>{user_id}</code> на <b>{days_to_add}</b> дн...")
 
     user = db.get_user(user_id)
     if not user:
         await message.answer(f"Не удалось найти пользователя <code>{user_id}</code> в базе.")
         return
         
-    if not user.marzban_username:
-        await message.answer(f"Не удалось продлить подписку: у пользователя <code>{user_id}</code> нет аккаунта в Marzban.")
-        return
+    # --- 3. Основная логика: взаимодействие с Marzban и нашей БД ---
+    marzban_username = (user.marzban_username or f"user_{user_id}").lower()
 
-    # --- 3. Основная логика с раздельной обработкой ошибок ---
     try:
-        # Сначала пытаемся продлить в Marzban. Это самая важная операция.
-        await marzban.modify_user(username=user.marzban_username, expire_days=days_to_add)
-        logger.info(f"Admin successfully extended subscription for Marzban user '{user.marzban_username}' by {days_to_add} days.")
-    except Exception as e:
-        logger.error(f"Admin failed to modify Marzban user '{user.marzban_username}': {e}", exc_info=True)
-        await message.answer(f"❌ **Ошибка!**\n\nНе удалось продлить подписку в Marzban для <code>{user.marzban_username}</code>. Локальная подписка не изменена. Проверьте логи.")
-        # Показываем карточку пользователя без изменений
-        await show_user_card(message, user_id)
-        return
+        # Вызываем "умный" метод, который сам решает, создать или продлить.
+        await marzban.modify_user(username=marzban_username, expire_days=days_to_add)
+        
+        # Если у пользователя не было marzban_username, значит, мы его только что создали.
+        # Записываем имя в нашу БД.
+        if not user.marzban_username:
+            db.update_user_marzban_username(user_id, marzban_username)
+            logger.info(f"Admin CREATED and subscribed Marzban user '{marzban_username}' for {days_to_add} days.")
+        else:
+            logger.info(f"Admin EXTENDED subscription for Marzban user '{marzban_username}' by {days_to_add} days.")
 
-    # Если в Marzban все успешно, продлеваем в нашей БД
-    db.extend_user_subscription(user_id, days=days_to_add)
-    # Получаем обновленного пользователя, чтобы взять новую дату
-    updated_user = db.get_user(user_id)
-    new_sub_end_date = updated_user.subscription_end_date.strftime('%d.%m.%Y')
-    
-    # --- 4. Финальное уведомление админа и пользователя ---
-    await message.answer(
-        f"✅ <b>Успешно!</b>\n\n"
-        f"Пользователю <code>{user_id}</code> добавлено <b>{days_to_add}</b> дн.\n"
-        f"Новая дата окончания подписки: <b>{new_sub_end_date}</b>"
-    )
-
-    # Отправляем уведомление самому пользователю
-    try:
-        await bot.send_message(
-            chat_id=user_id,
-            text=f"🎉 Ваша подписка была продлена администратором на **{days_to_add}** дн.!\n"
-                 f"Новая дата окончания: **{new_sub_end_date}**"
+        # Обновляем дату подписки в нашей БД.
+        db.extend_user_subscription(user_id, days=days_to_add)
+        
+        # Получаем обновленные данные для отчета.
+        updated_user = db.get_user(user_id)
+        new_sub_end_date = updated_user.subscription_end_date.strftime('%d.%m.%Y')
+        
+        # --- 4. Отправляем отчеты об успехе ---
+        
+        # Отчет для администратора
+        await message.answer(
+            f"✅ <b>Успешно!</b>\n\n"
+            f"Пользователю <code>{user_id}</code> добавлено <b>{days_to_add}</b> дн.\n"
+            f"Новая дата окончания подписки: <b>{new_sub_end_date}</b>"
         )
+
+        # Уведомление для пользователя
+        try:
+            await bot.send_message(
+                chat_id=user_id,
+                text=f"🎉 Администратор продлил вашу подписку на <b>{days_to_add}</b> дн.!\n"
+                     f"Новая дата окончания: <b>{new_sub_end_date}</b>"
+            )
+        except Exception as e:
+            logger.warning(f"Could not send notification to user {user_id} about subscription extension: {e}")
+            await message.answer("❗️Не удалось уведомить пользователя (возможно, он заблокировал бота).")
+
     except Exception as e:
-        logger.warning(f"Could not send notification to user {user_id} about subscription extension: {e}")
-        await message.answer("❗️Не удалось уведомить пользователя (возможно, он заблокировал бота).")
+        logger.error(f"Admin failed to add days for user {user_id}: {e}", exc_info=True)
+        await message.answer(f"❌ Произошла ошибка при взаимодействии с Marzban для пользователя <code>{user_id}</code>. Проверьте логи.")
     
-    # После всех действий снова показываем админу обновленную карточку пользователя
+    # В любом случае (успех или ошибка) показываем админу обновленную карточку пользователя.
     await show_user_card(message, user_id)
 
 # --- Блок удаления пользователя ---

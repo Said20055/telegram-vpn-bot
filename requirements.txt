@@ -13,3 +13,4 @@ yookassa~=3.0.1
 peewee==3.16.2       
 pytz
 qrcode[Pil]
+apscheduler

@@ -7,14 +7,14 @@ from aiogram import Bot
 from tgbot.services import payment
 from database import requests as db
 from marzban.init_client import MarzClientCache
-from loader import logger
+from loader import logger, config
 
 # Импортируем нашу функцию для показа профиля из хендлеров
 from tgbot.handlers.user.profile import show_profile_logic
 
 
 # --- 1. Логика управления основным пользователем ---
-async def _handle_user_payment(user_id: int, tariff, marzban: MarzClientCache):
+async def _handle_user_payment(user_id: int, tariff, marzban: MarzClientCache) -> bool:
     """Продлевает подписку в БД и создает/модифицирует пользователя в Marzban."""
     subscription_days = tariff.duration_days
     db.extend_user_subscription(user_id, days=subscription_days)
@@ -22,19 +22,20 @@ async def _handle_user_payment(user_id: int, tariff, marzban: MarzClientCache):
 
     user_from_db = db.get_user(user_id)
     marzban_username = (user_from_db.marzban_username or f"user_{user_id}").lower()
-
+    is_new_user_for_marzban = False
     try:
         if await marzban.get_user(marzban_username):
             await marzban.modify_user(username=marzban_username, expire_days=subscription_days)
         else:
             await marzban.add_user(username=marzban_username, expire_days=subscription_days)
-        
+            is_new_user_for_marzban = True
         if not user_from_db.marzban_username:
             db.update_user_marzban_username(user_id, marzban_username)
             
     except Exception as e:
         logger.error(f"CRITICAL: Failed to create/modify Marzban user {marzban_username}: {e}", exc_info=True)
         # TODO: Добавить отправку уведомления админу о критической ошибке
+    return is_new_user_for_marzban
 
 
 # --- 2. Логика начисления реферального бонуса ---
@@ -97,6 +98,40 @@ async def _notify_user_and_show_keys(user_id: int, tariff, marzban: MarzClientCa
         logger.error(f"Could not send payment success notification to user {user_id}: {e}")
 
 
+# --- 3. Логика уведомления о покупке в группу поддержки ---
+
+async def _log_transaction(
+    bot: Bot, 
+    user_id: int, 
+    tariff_name: str, 
+    tariff_price: float, 
+    is_new_user: bool
+):
+    """Формирует и отправляет лог о транзакции в специальную тему."""
+    user = db.get_user(user_id)
+    if not user: return
+    
+    # Определяем, была ли это первая покупка или продление
+    action_type = "💎 Новая подписка" if is_new_user else "🔄 Продление подписки"
+    
+    text = (
+        f"{action_type}\n\n"
+        f"👤 <b>Пользователь:</b> <a href='tg://user?id={user.id}'>{user.full_name}</a>\n"
+        f"<b>ID:</b> <code>{user.id}</code>\n"
+        f"<b>Username:</b> @{user.username or 'Отсутствует'}\n\n"
+        f"💳 <b>Тариф:</b> «{tariff_name}»\n"
+        f"💰 <b>Сумма:</b> {tariff_price} RUB"
+    )
+    
+    try:
+        await bot.send_message(
+            chat_id=config.tg_bot.support_chat_id,
+            message_thread_id=config.tg_bot.transaction_log_topic_id,
+            text=text
+        )
+    except Exception as e:
+        logger.error(f"Failed to send transaction log for user {user_id}: {e}")
+
 # --- ГЛАВНЫЙ ХЕНДЛЕР ВЕБХУКА ---
 async def yookassa_webhook_handler(request: web.Request):
     """
@@ -123,10 +158,17 @@ async def yookassa_webhook_handler(request: web.Request):
         # Получаем объекты бота и клиента Marzban из приложения
         bot: Bot = request.app['bot']
         marzban: MarzClientCache = request.app['marzban']
-
+         
         # Вызываем наши функции последовательно
-        await _handle_user_payment(user_id, tariff, marzban)
+        is_new = await _handle_user_payment(user_id, tariff, marzban)
         await _handle_referral_bonus(user_id, marzban, bot)
+        await _log_transaction(
+        bot=bot,
+        user_id=user_id,
+        tariff_name=tariff.name,
+        tariff_price=tariff.price,
+        is_new_user=is_new
+    )
         await _notify_user_and_show_keys(user_id, tariff, marzban, bot, request)
 
         return web.Response(status=200)

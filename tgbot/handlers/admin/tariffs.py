@@ -170,6 +170,3 @@ async def edit_tariff_finish(message: Message, state: FSMContext):
     db.update_tariff_field(tariff_id, field, new_value)
     await state.clear()
     await message.answer("✅ Данные тарифа успешно обновлены!")
-
-    fake_call = CallbackQuery(id="fake_call", from_user=message.from_user, chat_instance="", message=message)
-    await show_tariff_card(fake_call, tariff_id)

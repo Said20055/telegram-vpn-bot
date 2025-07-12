@@ -1,13 +1,19 @@
 server {
+    listen 80;
+    listen [::]:80;
+    server_name $DOMAIN *.$DOMAIN;
+
+    # всё на https с портом 8443
+    return 301 https://$host:8443$request_uri;
+}
+server {
     root /var/www/html;
     index index.html;
-
-    listen [::]:80;
-    listen 80;
     listen [::]:443 ssl;
     listen 443 ssl;
     listen 127.0.0.1:10000 ssl proxy_protocol;
     http2 on;
+
 
     server_name $DOMAIN *.$DOMAIN;
 

@@ -43,7 +43,7 @@ async def show_profile_logic(event: Message | CallbackQuery, marzban: MarzClient
     data_limit_str = "Безлимит" if data_limit == 0 or data_limit is None else format_traffic(data_limit)
 
     sub_url = get_user_attribute(marzban_user, 'subscription_url', '')
-    full_sub_url = f"https://{marzban._config.webhook.domain}{sub_url}" if sub_url else ""
+    full_sub_url = f"https://{marzban._config.webhook.domain}:8443{sub_url}" if sub_url else ""
 
     profile_text = (
         f"👤 <b>Ваш профиль</b>\n\n"
@@ -57,11 +57,6 @@ async def show_profile_logic(event: Message | CallbackQuery, marzban: MarzClient
 
     # --- Отправка ответа с QR-кодом ---
     try:
-        full_sub_url = get_user_attribute(marzban_user, 'subscription_url', '')
-        if not full_sub_url:
-            raise ValueError("Subscription URL is empty")
-
-        full_sub_url = f"https://{marzban._config.webhook.domain}{full_sub_url}"
         qr_code_stream = qr_generator.create_qr_code(full_sub_url)
         qr_photo = types.BufferedInputFile(qr_code_stream.getvalue(), filename="qr.png")
 

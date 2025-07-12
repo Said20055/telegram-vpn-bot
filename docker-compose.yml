@@ -4,7 +4,7 @@ services:
     image: nginx:1.25-alpine
     ports:
       - "80:80"
-      - "443:443"
+      - "8443:443"
     networks:
       - free_vpn_bot
     restart: always
@@ -30,7 +30,7 @@ services:
       YOUR_DOMAIN: ${DOMAIN}
     ports:
       - "127.0.0.1:8002:8002"
-      - "1080:1080"
+      - "443:443"
     networks:
       - free_vpn_bot
     volumes:

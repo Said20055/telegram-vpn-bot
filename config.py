@@ -8,6 +8,7 @@ class TgBot:
     token: str
     admin_ids: list[int]
     support_chat_id: int
+    transaction_log_topic_id: int
 
     @staticmethod
     def from_env(env: Env):
@@ -15,7 +16,10 @@ class TgBot:
         # env.list преобразует строку "123,456" в список [123, 456]
         admin_ids = env.list("ADMINS", subcast=int)
         support_chat_id = env.int("SUPPORT_CHAT_ID")
-        return TgBot(token=token, admin_ids=admin_ids, support_chat_id=support_chat_id)
+        transaction_log_topic_id = env.int("TRANSACTION_LOG_TOPIC_ID")
+        return TgBot(token=token, admin_ids=admin_ids,
+                     support_chat_id=support_chat_id,
+                     transaction_log_topic_id=transaction_log_topic_id)
 @dataclass
 class YooKassa:
     shop_id: str

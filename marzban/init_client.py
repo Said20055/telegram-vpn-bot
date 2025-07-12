@@ -61,8 +61,14 @@ class MarzClientCache:
         json_body = {
             "username": username.lower(),
             "expire": expire_timestamp,
-            "proxies": {"vless": {}},
-            "inbounds": {"vless": ["VLESS-Reality"]}
+            "proxies": {
+                "vless": {
+                    "flow": "xtls-rprx-vision" # <--- ДОБАВЬТЕ ЭТУ СТРОКУ
+                }
+            },
+            "inbounds": {
+                "vless": ["VLESS-Reality"]
+            }
         }
 
         response = await client.post("/api/user", json=json_body)
@@ -88,25 +94,46 @@ class MarzClientCache:
             return None
 
     async def modify_user(self, username: str, expire_days: int) -> Dict[str, Any]:
-        """Корректно продлевает подписку пользователя."""
-        client = await self.get_http_client()
+        """
+        Продлевает подписку существующего пользователя.
+        Если пользователь не найден в Marzban - создает его с указанным сроком.
+        """
+        self._logger.info(f"Modifying/Ensuring subscription for user '{username}' for {expire_days} days.")
         
-        user_dict = await self.get_user(username)
-        if not user_dict:
-            raise ValueError(f"User '{username}' not found in Marzban, can't modify.")
+        # 1. Проверяем, существует ли пользователь
+        user_exists = await self.get_user(username)
         
-        current_expire = user_dict.get('expire') or int(datetime.now().timestamp())
+        # 2. Сценарий: Пользователь существует -> Продлеваем
+        if user_exists:
+            self._logger.info(f"User '{username}' exists. Extending subscription.")
             
-        if current_expire > int(datetime.now().timestamp()):
-            new_expire_date = datetime.fromtimestamp(current_expire) + timedelta(days=expire_days)
+            # Получаем текущую дату истечения из словаря
+            current_expire_ts = user_exists.get('expire') or int(datetime.now().timestamp())
+            
+            # Рассчитываем новую дату
+            if current_expire_ts > int(datetime.now().timestamp()):
+                # Если подписка еще активна, добавляем дни к дате окончания
+                new_expire_date = datetime.fromtimestamp(current_expire_ts) + timedelta(days=expire_days)
+            else:
+                # Если подписка истекла, добавляем дни к сегодняшней дате
+                new_expire_date = datetime.now() + timedelta(days=expire_days)
+            
+            # Формируем тело запроса для изменения
+            json_body = {"expire": int(new_expire_date.timestamp())}
+            
+            # Отправляем PUT запрос на изменение
+            client = await self.get_http_client()
+            response = await client.put(f"/api/user/{username.lower()}", json=json_body)
+            response.raise_for_status()
+            return response.json()
+
+        # 3. Сценарий: Пользователя нет -> Создаем
         else:
-            new_expire_date = datetime.now() + timedelta(days=expire_days)
-        
-        json_body = {"expire": int(new_expire_date.timestamp())}
-        
-        response = await client.put(f"/api/user/{username.lower()}", json=json_body)
-        response.raise_for_status()
-        return response.json()
+            self._logger.warning(f"User '{username}' not found in Marzban. Creating a new user instead.")
+            # Если пользователя нет, мы не можем его "изменить". Вместо этого мы вызываем
+            # наш же метод add_user, чтобы создать его с нужным сроком.
+            # Это избавляет от дублирования кода.
+            return await self.add_user(username=username, expire_days=expire_days)
 
     # --- НОВЫЙ МЕТОД ---
         
