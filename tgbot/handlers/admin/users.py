@@ -9,7 +9,7 @@ from loader import logger
 
 # --- Фильтры и Клавиатуры ---
 from tgbot.filters.admin import IsAdmin
-from tgbot.keyboards.inline import user_manage_keyboard, confirm_delete_keyboard, back_to_main_menu_keyboard
+from tgbot.keyboards.inline import user_manage_keyboard, confirm_delete_keyboard, back_to_main_menu_keyboard, back_to_admin_main_menu_keyboard
 
 # --- База данных и API ---
 from database import requests as db
@@ -76,7 +76,7 @@ async def users_menu(call: CallbackQuery, state: FSMContext):
     await call.message.edit_text(
         "<b>👤 Управление пользователями</b>\n\n"
         "Введите ID или username (без @) пользователя для поиска:",
-        reply_markup=back_to_main_menu_keyboard()
+        reply_markup=back_to_admin_main_menu_keyboard()
     )
     await state.set_state(AdminFSM.find_user)
 

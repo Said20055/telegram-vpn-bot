@@ -23,6 +23,9 @@ services:
     image: gozargah/marzban:v0.8.4
     container_name: free_vpn_bot_marzban
     restart: always
+    dns:
+      - 1.1.1.1
+      - 1.0.0.1
     env_file: .env.marzban
     environment:
       UVICORN_HOST: "0.0.0.0"

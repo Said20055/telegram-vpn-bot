@@ -94,13 +94,49 @@ def delete_user(user_id: int) -> bool:
     except User.DoesNotExist:
         return False
 
+# database/requests.py
+
+@db_connection
+def get_users_with_expiring_subscription(days_left: int):
+    """
+    Возвращает пользователей, у которых подписка истекает
+    ровно через `days_left` дней.
+    """
+    # Вычисляем целевую дату
+    target_date_start = datetime.now().date() + timedelta(days=days_left)
+    target_date_end = target_date_start + timedelta(days=1)
+    
+    # Ищем пользователей, у которых дата окончания подписки попадает в этот день
+    return User.select().where(
+        User.subscription_end_date >= target_date_start,
+        User.subscription_end_date < target_date_end
+    )
+# database/requests.py
+
+@db_connection
+def get_users_with_expiring_subscription_in_hours(hours: int):
+    """
+    Возвращает пользователей, у которых подписка истекает
+    в промежутке от 지금 до ближайших X часов.
+    """
+    now = datetime.now()
+    expiration_limit = now + timedelta(hours=hours)
+    
+    # Ищем пользователей, у которых дата окончания > сейчас И < сейчас + X часов
+    return User.select().where(
+        User.subscription_end_date > now,
+        User.subscription_end_date <= expiration_limit
+    )
+
 # =============================================================================
 # --- Функции для работы с тарифами (Tariff) ---
 # =============================================================================
 
 @db_connection
 def get_active_tariffs():
-    return Tariff.select().where(Tariff.is_active == True)
+    """Возвращает список всех активных тарифов, отсортированных по цене."""
+    # Используем .order_by() для сортировки
+    return Tariff.select().where(Tariff.is_active == True).order_by(Tariff.price.asc())
 
 @db_connection
 def get_all_tariffs():

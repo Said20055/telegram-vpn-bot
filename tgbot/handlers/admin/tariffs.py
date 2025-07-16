@@ -126,10 +126,7 @@ async def add_tariff_duration(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(f"✅ Новый тариф «{new_tariff.name}» успешно создан!")
     
-    # Возвращаемся к списку тарифов, чтобы увидеть новый
-    # Создаем фейковый CallbackQuery, чтобы переиспользовать хендлер
-    fake_call = CallbackQuery(id="fake_call", from_user=message.from_user, chat_instance="", message=message)
-    await tariffs_menu(fake_call)
+
 
 # --- Блок редактирования существующего тарифа (FSM) ---
 # Общий хендлер для входа в режим редактирования

@@ -6,6 +6,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat, BotCommandScopeAllPrivateChats
 from aiogram.utils.callback_answer import CallbackAnswerMiddleware
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aiohttp import web
 
 # --- ШАГ 1: Импортируем готовые объекты из loader ---
@@ -19,13 +20,22 @@ from tgbot.middlewares.flood import ThrottlingMiddleware
 from tgbot.handlers.webhook_handlers import yookassa_webhook_handler
 from utils import broadcaster
 
-
+scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
 async def on_startup(bot, marzban): # Добавили marzban в аргументы
     """Выполняется при запуске бота."""
     # 1. Инициализируем базу данных
     setup_database()
-    logger.info("Database initialized.")
 
+    # 2. Запускаем планировщик
+    try:
+        scheduler.start()
+        logger.info("✅ Scheduler started successfully.")
+    except Exception as e:
+        logger.error(f"❌ Failed to start scheduler: {e}", exc_info=True)
+    
+    # ...
+    from tgbot.services.scheduler import schedule_jobs
+    schedule_jobs(scheduler, bot)
     # Можно добавить проверку соединения с Marzban
     # if await marzban.is_online():
     #     logger.info("Marzban panel is online.")
@@ -48,14 +58,6 @@ async def on_startup(bot, marzban): # Добавили marzban в аргумен
     else:
         await bot.delete_webhook(drop_pending_updates=True)
         logger.info("Polling mode: Webhook deleted and pending updates dropped.")
-
-
-# bot.py (или где находится ваша функция)
-
-from aiogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat
-from aiogram import Bot
-
-# ...
 
 # bot.py
 

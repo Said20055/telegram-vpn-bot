@@ -60,6 +60,11 @@ def back_to_main_menu_keyboard():
     builder.button(text='⬅️ Назад в главное меню', callback_data='back_to_main_menu')
     return builder.as_markup()
 
+def back_to_admin_main_menu_keyboard():
+    builder = InlineKeyboardBuilder()
+    builder.button(text='⬅️ Назад в главное меню', callback_data='admin_main_menu')
+    return builder.as_markup()
+
 def admin_main_menu_keyboard():
     """Главное меню админ-панели."""
     builder = InlineKeyboardBuilder()
