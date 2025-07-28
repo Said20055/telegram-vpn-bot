@@ -12,6 +12,7 @@ from marzban.init_client import MarzClientCache
 from tgbot.keyboards.inline import profile_keyboard, back_to_main_menu_keyboard
 from tgbot.services import qr_generator
 from tgbot.services.utils import format_traffic, get_marzban_user_info, get_user_attribute
+from urllib.parse import quote_plus
 
 profile_router = Router()
 
@@ -74,7 +75,7 @@ async def show_profile_logic(event: Message | CallbackQuery, marzban: MarzClient
             chat_id=user_id,
             photo=qr_photo,
             caption=profile_text,
-            reply_markup=profile_keyboard()
+            reply_markup=profile_keyboard(full_sub_url)
         )
 
     except Exception as e:
@@ -85,7 +86,7 @@ async def show_profile_logic(event: Message | CallbackQuery, marzban: MarzClient
         await bot.send_message(
             chat_id=user_id,
             text=profile_text,
-            reply_markup=profile_keyboard()
+            reply_markup=profile_keyboard(full_sub_url)
         )
 
 

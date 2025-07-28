@@ -16,6 +16,7 @@ services:
     volumes:
       - ./etc/nginx/templates:/etc/nginx/templates:ro
       - ./etc/nginx/conf:/etc/nginx/conf.d
+      - ./etc/nginx/static:/usr/share/nginx/html:ro
       - ${CERT_FULLCHAIN_PATH}:/etc/nginx/certs/fullchain.pem
       - ${CERT_KEY_PATH}:/etc/nginx/certs/privkey.pem
       - ./certbot/data:/var/www/certbot

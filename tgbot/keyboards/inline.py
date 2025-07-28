@@ -3,7 +3,7 @@
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from db import Tariff, PromoCode  # Корректный импорт для вашей структуры
 from loader import logger
-
+from urllib.parse import quote_plus
 
 
 def main_menu_keyboard():
@@ -36,10 +36,22 @@ def tariffs_keyboard(tariffs: list[Tariff]):
     return builder.as_markup()
 
 
-def profile_keyboard():
+def profile_keyboard(subscription_url: str):
     """Клавиатура для раздела "Мой профиль"."""
+    REDIRECT_PAGE_URL = "https://vac-service.ru/import"
+    
+    encoded_url = quote_plus(subscription_url)
+    
+    # 3. Формируем deep-link
+    deep_link = f"v2raytun://import/{encoded_url}"
+
+    # Теперь нужно этот deep-link передать на страницу редиректа
+    # Кодируем сам deep-link, чтобы передать его одним параметром
+    final_redirect_url = f"{REDIRECT_PAGE_URL}?deeplink={quote_plus(deep_link)}"
+
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔑 Мои ключи", callback_data="my_keys")
+    # Теперь URL ведет на безопасный https://, и Telegram его пропустит
+    builder.button(text="📲 Импортировать в V2RayTun", url=final_redirect_url)
     builder.button(text="🔄 Обновить", callback_data="my_profile")
     builder.button(text="⬅️ Назад в меню", callback_data="back_to_main_menu")
     builder.adjust(1)
