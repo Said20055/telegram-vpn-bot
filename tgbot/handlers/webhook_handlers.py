@@ -1,7 +1,9 @@
 # tgbot/handlers/webhook_handlers.py (Оптимиз
 from datetime import datetime
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.storage.base import StorageKey
 from aiohttp import web
-from aiogram import Bot
+from aiogram import Bot, Dispatcher
 
 # Импортируем сервисы, БД, клиент и логгер
 from tgbot.services import payment
@@ -55,6 +57,7 @@ async def _handle_referral_bonus(user_who_paid_id: int, marzban: MarzClientCache
         try:
             await marzban.modify_user(username=referrer.marzban_username, expire_days=bonus_days)
             db.extend_user_subscription(referrer.user_id, days=bonus_days)
+            db.add_bonus_days(referrer.user_id, days=bonus_days)
             logger.info(f"Referral bonus: Extended subscription for referrer {referrer.user_id} by {bonus_days} days.")
             await bot.send_message(
                 referrer.user_id,
@@ -76,22 +79,51 @@ async def _handle_referral_bonus(user_who_paid_id: int, marzban: MarzClientCache
 
 
 # --- 3. Логика уведомления пользователя об оплате и показ ключей ---
-async def _notify_user_and_show_keys(user_id: int, tariff, marzban: MarzClientCache, bot: Bot, request: web.Request):
-    """Уведомляет пользователя об успехе и показывает его профиль с ключами."""
+async def _notify_user_and_show_keys(user_id: int, tariff, marzban: MarzClientCache, bot: Bot,  request: web.Request):
+    """
+    Уведомляет пользователя об успехе, очищает старые сообщения/состояния и показывает профиль.
+    """
+    # --- 1. Очистка FSM и старого сообщения с платежом ---
+    try:
+        dp: Dispatcher = request.app['dp'] # Получаем диспетчер из request.app
+        storage = dp.storage              # Получаем хранилище из диспетчера
+        storage_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
+        state = FSMContext(storage=storage, key=storage_key)
+        
+        fsm_data = await state.get_data()
+        payment_message_id = fsm_data.get("payment_message_id")
+
+        # Если мы сохранили ID сообщения, редактируем его
+        if payment_message_id:
+            await bot.edit_message_text(
+                chat_id=user_id,
+                message_id=payment_message_id,
+                text="✅ <i>Этот счет был успешно оплачен.</i>",
+                reply_markup=None # Убираем все кнопки
+            )
+        
+        # Полностью очищаем состояние, чтобы сбросить скидку и message_id
+        await state.clear()
+        
+    except Exception as e:
+        logger.error(f"Could not clear state or edit payment message for user {user_id}: {e}")
+
+
+    # --- 2. Уведомление об успешной оплате и показ ключей (ваш код) ---
     try:
         await bot.send_message(
             user_id, 
             f"✅ Оплата прошла успешно! Ваш тариф '<b>{tariff.name}</b>' активирован на <b>{tariff.duration_days} дней</b>."
         )
         
-        # --- ВЫЗОВ "МОИ КЛЮЧИ" ---
-        # Создаем фейковый объект Message, чтобы передать его в show_profile_logic
+        # Создаем "искусственное" событие Message для вызова show_profile_logic
         from aiogram.types import User, Chat, Message
+        from datetime import datetime
         fake_user = User(id=user_id, is_bot=False, first_name="N/A")
         fake_chat = Chat(id=user_id, type="private")
-        fake_message = Message(message_id=0, date=datetime.now(), chat=fake_chat, from_user=fake_user, bot=bot)
+        fake_message = Message(message_id=0, date=datetime.now(), chat=fake_chat, from_user=fake_user)
         
-        # Вызываем функцию показа профиля, которую мы уже написали
+        # Вызываем функцию показа профиля, передавая bot ЯВНО как отдельный аргумент
         await show_profile_logic(fake_message, marzban, bot)
         
     except Exception as e:

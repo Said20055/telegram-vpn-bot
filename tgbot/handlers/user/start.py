@@ -4,6 +4,7 @@ from aiogram import Router, F, Bot
 from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.types import Message, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest
+from aiogram.fsm.context import FSMContext
 # --- Импорты ---
 from loader import logger
 from database import requests as db
@@ -127,8 +128,9 @@ async def referral_program_handler(call: CallbackQuery, bot: Bot):
     await show_referral_info(call, bot)
     
 @start_router.callback_query(F.data == "back_to_main_menu")
-async def back_to_main_menu_handler(call: CallbackQuery):
+async def back_to_main_menu_handler(call: CallbackQuery, state: FSMContext):
     """Возвращает пользователя в главное меню."""
+    await state.clear()
     await call.answer()
     text = f'👋 Привет, {call.from_user.full_name}!'
     reply_markup = main_menu_keyboard()

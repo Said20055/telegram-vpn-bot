@@ -1,7 +1,7 @@
 # tgbot/keyboards/inline.py (чистая, финальная версия)
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from db import Tariff  # Корректный импорт для вашей структуры
+from db import Tariff, PromoCode  # Корректный импорт для вашей структуры
 from loader import logger
 
 
@@ -13,7 +13,8 @@ def main_menu_keyboard():
     builder.button(text='👤 Мой профиль', callback_data='my_profile')
     builder.button(text='🔑 Мои ключи', callback_data='my_keys')
     builder.button(text='🤝 Реферальная программа', callback_data='referral_program')
-    builder.button(text="📲 Инструкция", callback_data="instruction_info")
+    builder.button(text="📲 Инструкция по подключению", callback_data="instruction_info")
+    builder.button(text="🎁 Ввести промокод", callback_data="enter_promo_code")
     builder.button(text="💬 Поддержка", callback_data="support_chat_start")
     
     # Расставляем кнопки: 1, 2, 2. Выглядит аккуратно.
@@ -53,7 +54,6 @@ def help_keyboard():
     builder.adjust(1)
     return builder.as_markup()
 
-
 def back_to_main_menu_keyboard():
     """Простая клавиатура с одной кнопкой "Назад в главное меню"."""
     builder = InlineKeyboardBuilder()
@@ -72,6 +72,7 @@ def admin_main_menu_keyboard():
     builder.button(text="📈 Статистика", callback_data="admin_stats")
     builder.button(text="💳 Управление тарифами", callback_data="admin_tariffs_menu")
     builder.button(text="📢 Рассылка", callback_data="admin_broadcast")
+    builder.button(text="🎁 Промокоды", callback_data="admin_promo_codes")
     builder.adjust(1)
     return builder.as_markup()
 
@@ -168,4 +169,45 @@ def close_support_chat_keyboard():
     """Клавиатура для закрытия чата с поддержкой."""
     builder = InlineKeyboardBuilder()
     builder.button(text="❌ Завершить диалог", callback_data="support_chat_close")
+    return builder.as_markup()
+
+
+
+def promo_codes_list_keyboard(promo_codes: list[PromoCode]):
+    """Показывает список всех промокодов с кнопкой 'Удалить' и 'Добавить'."""
+    builder = InlineKeyboardBuilder()
+    if promo_codes:
+        for code in promo_codes:
+            # Формируем текст для кнопки
+            info = []
+            if code.bonus_days > 0:
+                info.append(f"{code.bonus_days} дн.")
+            if code.discount_percent > 0:
+                info.append(f"{code.discount_percent}%")
+            info.append(f"{code.uses_left}/{code.max_uses} исп.")
+            
+            # Добавляем кнопку для каждого кода
+            builder.button(
+                text=f"🗑️ {code.code} ({', '.join(info)})",
+                callback_data=f"admin_delete_promo_{code.id}"
+            )
+    
+    builder.button(text="➕ Добавить новый промокод", callback_data="admin_add_promo")
+    builder.button(text="⬅️ Назад в админ-меню", callback_data="admin_main_menu")
+    builder.adjust(1) # Все кнопки по одной в ряд
+    return builder.as_markup()
+
+
+def promo_type_keyboard():
+    """Предлагает выбрать тип создаваемого промокода."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🎁 Бонусные дни", callback_data="promo_type_days")
+    builder.button(text="💰 Скидка (%)", callback_data="promo_type_discount")
+    builder.adjust(1)
+    return builder.as_markup()
+
+def back_to_promo_list_keyboard():
+    """Клавиатура для возврата к списку промокодов."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⬅️ К списку промокодов", callback_data="admin_promo_codes")
     return builder.as_markup()

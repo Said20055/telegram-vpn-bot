@@ -1,6 +1,6 @@
 # database/requests.py (Полностью исправленная и отрефакторенная версия)
 
-from db import db, User, Tariff
+from db import db, User, Tariff, PromoCode, UsedPromoCode
 from peewee import DoesNotExist
 from datetime import datetime, timedelta
 
@@ -213,3 +213,53 @@ def get_user_by_support_topic(topic_id: int) -> User | None:
         return User.get(User.support_topic_id == topic_id)
     except DoesNotExist:
         return None
+
+# =============================================================================
+# --- Функции для системы промокодов ---
+# =============================================================================
+
+@db_connection
+def create_promo_code(code, bonus_days=0, discount_percent=0, max_uses=1, expire_date=None):
+    return PromoCode.create(
+        code=code.upper(),
+        bonus_days=bonus_days,
+        discount_percent=discount_percent,
+        max_uses=max_uses,
+        uses_left=max_uses,
+        expire_date=expire_date
+    )
+
+@db_connection
+def get_all_promo_codes():
+    return PromoCode.select()
+
+@db_connection
+def get_promo_code(code: str) -> PromoCode | None:
+    try:
+        return PromoCode.get(PromoCode.code == code.upper())
+    except DoesNotExist:
+        return None
+
+@db_connection
+def has_user_used_promo(user_id: int, promo_id: int) -> bool:
+    return UsedPromoCode.select().where(
+        (UsedPromoCode.user == user_id) &
+        (UsedPromoCode.promo_code == promo_id)
+    ).exists()
+
+@db_connection
+def use_promo_code(user_id: int, promo: PromoCode):
+    """Отмечает, что пользователь использовал промокод."""
+    with db.atomic(): # Используем транзакцию для безопасности
+        promo.uses_left -= 1
+        promo.save()
+        UsedPromoCode.create(user=user_id, promo_code=promo)
+
+@db_connection
+def delete_promo_code(promo_id: int):
+    try:
+        promo = PromoCode.get_by_id(promo_id)
+        promo.delete_instance(recursive=True) # Удалит и все записи об использовании
+        return True
+    except DoesNotExist:
+        return False

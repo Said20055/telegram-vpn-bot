@@ -13,6 +13,7 @@ from .users import admin_users_router
 from .broadcast import admin_broadcast_router
 from .tariffs import admin_tariffs_router
 from .cancel import cancel_router
+from .promocodes import admin_promo_router
 
 # Создаем один большой "агрегирующий" роутер для всей админки
 admin_router = Router(name="admin")
@@ -30,7 +31,8 @@ admin_router.include_routers(
     admin_main_router,
     admin_users_router,
     admin_broadcast_router,
-    admin_tariffs_router
+    admin_tariffs_router,
+    admin_promo_router
 )
 
 # Экспортируем только один, уже собранный и настроенный admin_router

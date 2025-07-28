@@ -72,6 +72,7 @@ async def register_commands(bot: Bot):
         BotCommand(command='support', description='💬 Поддержка'),
         BotCommand(command='referral', description='🤝 Реф. программа'),
         BotCommand(command='instruction', description='📲 Инструкция'),
+        BotCommand(command='promo', description='🎁Ввести промокод'),
     ]
     await bot.set_my_commands(user_commands, BotCommandScopeDefault())
 
@@ -155,7 +156,7 @@ async def main_polling():
     logger.info("Starting bot in polling mode...")
 
     # Создаем задачу для запуска веб-сервера YooKassa в фоне
-    yookassa_server_task = asyncio.create_task(start_yookassa_webhook_server())
+    yookassa_server_task = asyncio.create_task(start_yookassa_webhook_server(dp))
 
     # Создаем задачу для запуска поллинга Telegram в фоне
     polling_task = asyncio.create_task(dp.start_polling(bot))
@@ -167,13 +168,14 @@ async def main_polling():
     )
 
 
-async def start_yookassa_webhook_server():
+async def start_yookassa_webhook_server(dp: Dispatcher):
     app = web.Application()
     
     # "Внедряем" в приложение все нужные нам объекты
     app['bot'] = bot
     app['marzban'] = marzban_client # <--- ВОТ ЭТА СТРОКА РЕШАЕТ ПРОБЛЕМУ
     app['config'] = config         # <--- ЭТА СТРОКА НУЖНА ДЛЯ ОПОВЕЩЕНИЙ АДМИНА
+    app['dp'] = dp
     
     app.router.add_post('/yookassa', yookassa_webhook_handler)
     

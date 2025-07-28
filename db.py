@@ -53,14 +53,37 @@ class User(BaseModel):
     class Meta:
         # Указываем имя таблицы в нижнем регистре, как принято в PostgreSQL
         table_name = "users" 
+        
+class PromoCode(BaseModel):
+    id = BigAutoField(primary_key=True)
+    code = CharField(unique=True) # Сам промокод, например "SUMMER2025"
+    
+    # Что дает промокод (одно из полей должно быть заполнено)
+    bonus_days = IntegerField(default=0)
+    discount_percent = IntegerField(default=0) # Скидка в процентах (например, 20)
 
+    # Ограничения
+    expire_date = DateTimeField(null=True) # Дата, после которой код недействителен
+    max_uses = IntegerField(default=1)     # Максимальное количество использований
+    uses_left = IntegerField(default=1)    # Сколько использований осталось
+
+    class Meta:
+        table_name = "promo_codes"
+
+class UsedPromoCode(BaseModel):
+    user = ForeignKeyField(User, backref='used_promo_codes')
+    promo_code = ForeignKeyField(PromoCode, backref='usages')
+    used_date = DateTimeField(default=datetime.datetime.now)
+
+    class Meta:
+        table_name = "used_promo_codes"
 
 def setup_database():
     """Инициализирует базу данных: подключается и создает таблицы, если их нет."""
     try:
         db.connect()
         # Добавляем Tariff в список создаваемых таблиц
-        db.create_tables([User, Tariff])
+        db.create_tables([User, Tariff, PromoCode, UsedPromoCode])
         print("INFO: Database connection successful. Tables User, Tariff created or already exist.")
         
         # --- Первоначальное заполнение тарифов ---
