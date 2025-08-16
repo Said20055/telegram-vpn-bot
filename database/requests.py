@@ -1,6 +1,6 @@
 # database/requests.py (Полностью исправленная и отрефакторенная версия)
 
-from db import db, User, Tariff, PromoCode, UsedPromoCode
+from db import Channel, db, User, Tariff, PromoCode, UsedPromoCode
 from peewee import DoesNotExist
 from datetime import datetime, timedelta
 
@@ -93,6 +93,17 @@ def delete_user(user_id: int) -> bool:
         return True
     except User.DoesNotExist:
         return False
+
+@db_connection
+def set_user_trial_received(user_id: int):
+    """
+    Отмечает в базе данных, что пользователь получил пробный период.
+    """
+    # Создаем запрос на обновление
+    query = User.update(has_received_trial=True).where(User.user_id == user_id)
+    
+    # Выполняем запрос
+    query.execute()
 
 # database/requests.py
 
@@ -193,6 +204,11 @@ def get_user_referrals(user_id: int):
     """Возвращает список пользователей, приглашенных указанным юзером."""
     return User.select().where(User.referrer_id == user_id)
 
+@db_connection
+def count_users_with_first_payment():
+    """Считает общее количество пользователей, совершивших первую оплату."""
+    return User.select().where(User.is_first_payment_made == True).count()
+
 # =============================================================================
 # --- Функции для поддержки ---
 # =============================================================================
@@ -263,3 +279,21 @@ def delete_promo_code(promo_id: int):
         return True
     except DoesNotExist:
         return False
+    
+    
+# =============================================================================
+# --- Функции для системы каналов ---
+# =============================================================================
+    
+@db_connection
+def add_channel(channel_id: int, title: str, invite_link: str) -> Channel:
+    return Channel.create(channel_id=channel_id, title=title, invite_link=invite_link)
+
+@db_connection
+def get_all_channels() -> list[Channel]:
+    return list(Channel.select())
+
+@db_connection
+def delete_channel(channel_id: int):
+    query = Channel.delete().where(Channel.channel_id == channel_id)
+    query.execute()

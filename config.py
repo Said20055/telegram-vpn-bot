@@ -9,7 +9,7 @@ class TgBot:
     admin_ids: list[int]
     support_chat_id: int
     transaction_log_topic_id: int
-
+    instruction_video_id: str | None
     @staticmethod
     def from_env(env: Env):
         token = env.str("BOT_TOKEN")
@@ -17,9 +17,11 @@ class TgBot:
         admin_ids = env.list("ADMINS", subcast=int)
         support_chat_id = env.int("SUPPORT_CHAT_ID")
         transaction_log_topic_id = env.int("TRANSACTION_LOG_TOPIC_ID")
+        instruction_video_id = env.str("INSTRUCTION_VIDEO_ID", default=None)
         return TgBot(token=token, admin_ids=admin_ids,
                      support_chat_id=support_chat_id,
-                     transaction_log_topic_id=transaction_log_topic_id)
+                     transaction_log_topic_id=transaction_log_topic_id,
+                     instruction_video_id=instruction_video_id)
 @dataclass
 class YooKassa:
     shop_id: str

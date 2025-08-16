@@ -7,6 +7,7 @@ from .start import start_router
 from .profile import profile_router
 from .payment import payment_router
 from .instruction import instruction_router
+from .trial_sub import trial_sub_router
 # ... (импорты остальных ваших частей user_router)
 
 # Создаем один большой роутер для всех пользовательских хендлеров
@@ -22,7 +23,8 @@ user_router.include_routers(
     start_router,
     profile_router,
     payment_router,
-    instruction_router
+    instruction_router,
+    trial_sub_router
 )
 
 __all__ = ["user_router"]

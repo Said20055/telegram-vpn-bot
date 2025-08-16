@@ -53,6 +53,45 @@ class MarzClientCache:
             self._logger.info('New Marzban http client created.')
         return self._http_client
 
+    async def get_inbounds(self) -> list: # <-- Меняем тип на list
+        """Получает список всех inbounds из Marzban."""
+        client = await self.get_http_client()
+        try:
+            response = await client.get("/api/inbounds")
+            response.raise_for_status()
+            
+            inbounds_list = response.json()
+            if isinstance(inbounds_list, list):
+                return inbounds_list
+            else:
+                self._logger.error(f"Marzban API /api/inbounds returned unexpected type: {type(inbounds_list)}")
+                return []
+        except Exception as e:
+            self._logger.error(f"Failed to get inbounds from Marzban: {e}")
+            return []
+    async def get_system_stats(self) -> Dict[str, Any]:
+        """Получает системную статистику из Marzban (включая онлайн)."""
+        client = await self.get_http_client()
+        try:
+            response = await client.get("/api/system")
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self._logger.error(f"Failed to get system stats from Marzban: {e}")
+            # Возвращаем пустой словарь с дефолтными значениями
+            return {"online_clients": 0, "cpu_usage": 0, "mem_usage": 0}
+    
+    async def get_nodes(self) -> list:
+        """Получает список всех узлов (серверов) из Marzban."""
+        client = await self.get_http_client()
+        try:
+            response = await client.get("/api/nodes")
+            response.raise_for_status()
+            nodes_list = response.json()
+            return nodes_list if isinstance(nodes_list, list) else []
+        except Exception as e:
+            self._logger.error(f"Failed to get nodes from Marzban: {e}")
+            return []
     async def add_user(self, username: str, expire_days: int) -> Dict[str, Any]:
         """Создает нового пользователя в Marzban."""
         client = await self.get_http_client()

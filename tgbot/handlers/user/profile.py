@@ -1,15 +1,17 @@
 # tgbot/handlers/user/profile.py
-
+import asyncio
 from aiogram import Router, F, types, Bot
 from aiogram.types import Message, CallbackQuery, BufferedInputFile
 from aiogram.exceptions import TelegramBadRequest
 from aiohttp.client_exceptions import ClientConnectionError
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.filters import Command
+from urllib.parse import urlparse
 from datetime import datetime
 
 from loader import logger
 from marzban.init_client import MarzClientCache
-from tgbot.keyboards.inline import profile_keyboard, back_to_main_menu_keyboard
+from tgbot.keyboards.inline import profile_keyboard, back_to_main_menu_keyboard, single_key_view_keyboard
 from tgbot.services import qr_generator
 from tgbot.services.utils import format_traffic, get_marzban_user_info, get_user_attribute
 from urllib.parse import quote_plus
@@ -100,55 +102,82 @@ async def my_profile_callback_handler(call: CallbackQuery, marzban: MarzClientCa
     await call.answer("Загружаю информацию...")
     await show_profile_logic(call, marzban, bot)
 
-
 # --- Хендлер для "Мои ключи" (остается почти без изменений) ---
 @profile_router.callback_query(F.data == "my_keys")
 async def my_keys_handler(call: CallbackQuery, marzban: MarzClientCache):
-    """Показывает пользователю его ключи для подключения."""
-    await call.answer()
+    """
+    Показывает меню с кнопками для каждого ключа,
+    определяя его узел (страну) и протокол.
+    """
+    await call.answer("Загружаю список ключей...")
     
-    # Используем ту же самую сервисную функцию
     db_user, marzban_user = await get_marzban_user_info(call, marzban)
-    if not marzban_user:
-        return
+    if not marzban_user: return
 
     links = get_user_attribute(marzban_user, 'links', [])
-
     if not links:
-        # --- ИСПРАВЛЕННАЯ ЛОГИКА ОТПРАВКИ ---
-        text = "К сожалению, для вашей подписки не найдено ключей. Обратитесь в поддержку."
-        reply_markup = back_to_main_menu_keyboard()
-        try:
-            await call.message.edit_text(text, reply_markup=reply_markup)
-        except TelegramBadRequest:
-            await call.message.delete()
-            await call.message.answer(text, reply_markup=reply_markup)
+        await call.message.edit_text("К сожалению, для вашей подписки не найдено ключей.", reply_markup=back_to_main_menu_keyboard())
         return
+        
+    # 1. Получаем все необходимые данные от Marzban параллельно
+    inbounds_list = await marzban.get_inbounds()
 
-    formatted_links = [f"<code>{link}</code>" for link in links]
-    message_text = (
-        "🔑 <b>Вот ваши ключи для подключения:</b>\n\n"
-        "<i>Нажмите на ключ, чтобы скопировать его, а затем вставьте в вашем VPN-клиенте.</i>\n\n" +
-        "\n\n".join(formatted_links)
-    )
+    # 2. Создаем "карту" для быстрого поиска: { "порт": "список хостов этого inbound'а" }
+    port_to_hosts_map = {}
+    # Проходим по списку инбаундов
+    for inbound_data in inbounds_list:
+        # Убеждаемся, что это словарь (на всякий случай)
+        if isinstance(inbound_data, dict):
+            port = str(inbound_data.get('port'))
+            hosts = inbound_data.get('hosts', [])
+            # Создаем вложенный словарь { "адрес хоста": "имя хоста" }
+            port_to_hosts_map[port] = {host.get('address'): host.get('remark') for host in hosts}
 
-    # --- ИСПРАВЛЕННАЯ ЛОГИКА ОТПРАВКИ ---
-    reply_markup = back_to_main_menu_keyboard()
-    try:
-        # Пытаемся изменить текущее сообщение (с фото) на новое текстовое
-        await call.message.edit_text(
-            text=message_text,
-            reply_markup=reply_markup,
-            disable_web_page_preview=True
-        )
-    except TelegramBadRequest:
-        # Если не получилось (потому что это было фото), удаляем старое и шлем новое
+    # 3. Создаем клавиатуру (этот блок остается без изменений)
+    keys_keyboard = InlineKeyboardBuilder()
+    
+    for i, link in enumerate(links):
         try:
-            await call.message.delete()
-        except TelegramBadRequest:
-            pass # Если не можем удалить - не страшно
-        await call.message.answer(
-            text=message_text,
-            reply_markup=reply_markup,
-            disable_web_page_preview=True
+            parsed_url = urlparse(link)
+            server_address = parsed_url.hostname
+            server_port = str(parsed_url.port)
+        except Exception:
+            server_address, server_port = "unknown", "unknown"
+            
+        hosts_for_port = port_to_hosts_map.get(server_port, {})
+        host_remark = hosts_for_port.get(server_address, "Основной сервер")
+        
+        button_text = f"🔑 Ключ: {host_remark or server_address}"
+        
+        keys_keyboard.button(text=button_text, callback_data=f"show_key_{i}")
+        
+    keys_keyboard.button(text="⬅️ Назад в главное меню", callback_data="back_to_main_menu")
+    keys_keyboard.adjust(1)
+        
+    text = "🔑 <b>Ваши ключи</b>\n\nВыберите ключ для просмотра:"
+    await call.message.edit_text(text, reply_markup=keys_keyboard.as_markup())
+
+@profile_router.callback_query(F.data.startswith("show_key_"))
+async def show_single_key_handler(call: CallbackQuery, marzban: MarzClientCache):
+    """Показывает выбранный ключ, снова запрашивая данные."""
+    await call.answer()
+    
+    try:
+        key_index = int(call.data.split("_")[2])
+        
+        # Снова делаем запрос к Marzban, чтобы получить свежие данные
+        db_user, marzban_user = await get_marzban_user_info(call, marzban)
+        if not marzban_user: return
+        
+        links = get_user_attribute(marzban_user, 'links', [])
+        selected_key = links[key_index]
+
+        text = (
+            f"🔑 <b>Ваш ключ #{key_index + 1}</b>\n\n"
+            "Нажмите на ключ, чтобы скопировать его:\n\n"
+            f"<code>{selected_key}</code>"
         )
+        await call.message.edit_text(text, reply_markup=single_key_view_keyboard())
+
+    except (IndexError, ValueError, TypeError):
+        await call.answer("Произошла ошибка, ключ не найден. Попробуйте снова.", show_alert=True)

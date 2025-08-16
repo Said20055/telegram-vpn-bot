@@ -146,3 +146,6 @@ async def back_to_main_menu_handler(call: CallbackQuery, state: FSMContext):
         except TelegramBadRequest:
             pass # Если не можем удалить - не страшно
         await call.message.answer(text, reply_markup=reply_markup)
+
+
+
