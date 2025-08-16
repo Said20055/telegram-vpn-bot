@@ -107,7 +107,7 @@ async def my_profile_callback_handler(call: CallbackQuery, marzban: MarzClientCa
 async def my_keys_handler(call: CallbackQuery, marzban: MarzClientCache):
     """
     Показывает меню с кнопками для каждого ключа,
-    определяя его узел (страну) и протокол.
+    объединяя информацию об узлах и протоколах. (Адаптировано под API, возвращающее список)
     """
     await call.answer("Загружаю список ключей...")
     
@@ -116,46 +116,62 @@ async def my_keys_handler(call: CallbackQuery, marzban: MarzClientCache):
 
     links = get_user_attribute(marzban_user, 'links', [])
     if not links:
-        await call.message.edit_text("К сожалению, для вашей подписки не найдено ключей.", reply_markup=back_to_main_menu_keyboard())
+        # ... (обработка, если ключей нет)
         return
         
-    # 1. Получаем все необходимые данные от Marzban параллельно
-    inbounds_list = await marzban.get_inbounds()
+    # --- ИСПРАВЛЕННАЯ ЛОГИКА ---
+    
+    # 1. Параллельно получаем все необходимые данные
+    nodes, inbounds_list = await asyncio.gather(
+        marzban.get_nodes(),
+        marzban.get_inbounds() # Этот метод теперь должен возвращать СПИСОК
+    )
 
-    # 2. Создаем "карту" для быстрого поиска: { "порт": "список хостов этого inbound'а" }
-    port_to_hosts_map = {}
-    # Проходим по списку инбаундов
+    # 2. Создаем карты для быстрого поиска
+    address_to_name_map = {node['address']: node['name'] for node in nodes}
+    main_domain = marzban._config.webhook.domain
+    if main_domain not in address_to_name_map:
+        address_to_name_map[main_domain] = "Основной сервер"
+        
+    # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+    # Создаем карту портов, итерируясь по СПИСКУ inbounds_list
+    port_to_protocol_map = {}
     for inbound_data in inbounds_list:
-        # Убеждаемся, что это словарь (на всякий случай)
         if isinstance(inbound_data, dict):
             port = str(inbound_data.get('port'))
-            hosts = inbound_data.get('hosts', [])
-            # Создаем вложенный словарь { "адрес хоста": "имя хоста" }
-            port_to_hosts_map[port] = {host.get('address'): host.get('remark') for host in hosts}
-
+            protocol = inbound_data.get('protocol', 'protocol?').upper()
+            port_to_protocol_map[port] = protocol
+    
     # 3. Создаем клавиатуру (этот блок остается без изменений)
     keys_keyboard = InlineKeyboardBuilder()
     
     for i, link in enumerate(links):
         try:
             parsed_url = urlparse(link)
-            server_address = parsed_url.hostname
-            server_port = str(parsed_url.port)
+            server_address = parsed_url.hostname or parsed_url.netloc.split('@')[-1].split(':')[0]
+            server_port = str(parsed_url.port or parsed_url.netloc.split(':')[-1])
         except Exception:
             server_address, server_port = "unknown", "unknown"
             
-        hosts_for_port = port_to_hosts_map.get(server_port, {})
-        host_remark = hosts_for_port.get(server_address, "Основной сервер")
+        node_name = address_to_name_map.get(server_address, "Неизвестный узел")
+        protocol_name = port_to_protocol_map.get(server_port, "")
         
-        button_text = f"🔑 Ключ: {host_remark or server_address}"
+        button_text = f"🔑 {node_name}"
+        if protocol_name:
+            button_text += f" ({protocol_name})"
         
         keys_keyboard.button(text=button_text, callback_data=f"show_key_{i}")
         
-    keys_keyboard.button(text="⬅️ Назад в главное меню", callback_data="back_to_main_menu")
+    keys_keyboard.button(text="⬅️ Назад в профиль", callback_data="my_profile")
     keys_keyboard.adjust(1)
         
-    text = "🔑 <b>Ваши ключи</b>\n\nВыберите ключ для просмотра:"
-    await call.message.edit_text(text, reply_markup=keys_keyboard.as_markup())
+    text = "🔑 <b>Ваши ключи</b>\n\nВыберите сервер и протокол для просмотра ключа:"
+    
+    try:
+        await call.message.edit_text(text, reply_markup=keys_keyboard.as_markup())
+    except TelegramBadRequest: # Если старое сообщение было с фото
+        await call.message.delete()
+        await call.message.answer(text, reply_markup=keys_keyboard.as_markup())
 
 @profile_router.callback_query(F.data.startswith("show_key_"))
 async def show_single_key_handler(call: CallbackQuery, marzban: MarzClientCache):

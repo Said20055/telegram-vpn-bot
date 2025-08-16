@@ -53,26 +53,23 @@ class MarzClientCache:
             self._logger.info('New Marzban http client created.')
         return self._http_client
 
-    async def get_inbounds(self) -> dict: # <-- Меняем тип возвращаемого значения на dict
-        """Получает словарь всех inbounds из Marzban."""
+    async def get_inbounds(self) -> list: # <-- Убедитесь, что здесь list
+        """Получает список всех inbounds из Marzban."""
         client = await self.get_http_client()
         try:
             response = await client.get("/api/inbounds")
             response.raise_for_status()
             
-            inbounds_dict = response.json()
-            
-            # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
-            # API возвращает словарь, поэтому проверяем, что это именно словарь
-            if isinstance(inbounds_dict, dict):
-                return inbounds_dict
+            inbounds_list = response.json()
+            # Проверяем, что это список
+            if isinstance(inbounds_list, list):
+                return inbounds_list
             else:
-                self._logger.error(f"Marzban API /api/inbounds returned unexpected type: {type(inbounds_dict)}")
-                return {} # Возвращаем пустой СЛОВАРЬ
-
+                self._logger.error(...)
+                return [] # Возвращаем пустой СПИСОК
         except Exception as e:
-            self._logger.error(f"Failed to get inbounds from Marzban: {e}")
-            return {} # И в случае ошибки тоже пустой СЛОВАРЬ
+            self._logger.error(...)
+            return [] # И здесь тоже пустой СПИСОК
         
     async def get_system_stats(self) -> Dict[str, Any]:
         """Получает системную статистику из Marzban (включая онлайн)."""

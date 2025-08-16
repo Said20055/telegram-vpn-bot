@@ -8,6 +8,7 @@ from tgbot.filters.admin import IsAdmin
 from tgbot.keyboards.inline import admin_main_menu_keyboard
 from database import requests as db 
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from loader import logger
 
 admin_main_router = Router()
 admin_main_router.message.filter(IsAdmin()) # Применяем фильтр ко всем хендлерам в этом роутере
@@ -32,47 +33,45 @@ async def admin_stats_handler(call: CallbackQuery, marzban: MarzClientCache):
     
     # --- 2. Затем параллельно выполняем все АСИНХРОННЫЕ запросы к API Marzban ---
     # Теперь мы передаем в gather уже вызванные асинхронные функции
-    system_stats, nodes = await asyncio.gather(
-        marzban.get_system_stats(),
-        marzban.get_nodes()
-    )
+    system_stats = await marzban.get_system_stats()
+    nodes = await marzban.get_nodes()
     
-    # --- 3. Формируем текст сообщения (этот блок остается без изменений) ---
-    online_total = system_stats.get("online_clients", "н/д")
+    # --- 2. Формируем текст ---
     
+    # Общий онлайн (самое точное число)
+    online_total = system_stats.get('online_users', 'н/д')
+    # Онлайн на основном сервере (в v0.8.4 это часто то же самое, что и общий)
+    host_online = system_stats.get('users_online', online_total) 
+
     text_parts = [
         "📊 <b>Расширенная статистика</b>\n",
         "<b>Пользователи:</b>",
-        f"├ Всего в боте: <b>{total_users}</b>",
-        f"└ Активных подписок: <b>{active_subs}</b>",
-        "",
+        f"├ Всего в боте: 👥<b>{total_users}</b>",
+        f"└ Активных подписок: ✅<b>{active_subs}</b>",
+        "", # Пустая строка для отступа
         "<b>Конверсия:</b>",
         f"└ Всего первых оплат: <b>{first_payments_total}</b>",
         "",
-        "<b>Серверы Marzban:</b>",
+        "<b>Серверы Marzban (v0.8.4):</b>",
         f"├ 🟢 Общий онлайн: <b>{online_total}</b>",
+        f"└ 🖥️ Онлайн на основном сервере: <b>{host_online}</b>\n", # Показываем онлайн хоста
+        "<b>Подключенные узлы (Nodes):</b>",
     ]
-    
+
+    # Показываем список узлов и их статус подключения
     if nodes:
-        # В новых версиях Marzban общая статистика НЕ включает онлайн хоста
-        # Его нужно получать отдельно или суммировать
-        host_online = 0
-        nodes_online_list = []
         for i, node in enumerate(nodes):
             node_name = node.get('name', f"Узел #{i+1}")
-            node_online = node.get('users_online', 0)
+            node_status = node.get('status', 'неизвестен').capitalize()
+            # Иконка в зависимости от статуса
+            status_icon = "✅" if node_status == 'Connected' else "❌"
             
-            # Если у узла нет `node_id`, это, скорее всего, основной хост
-            if node.get('id') is None or node.get('id') == 0: 
-                 host_online = node_online
-            else:
-                 nodes_online_list.append(f"🌐 {node_name}: <b>{node_online}</b>")
-
-        text_parts.append(f"│  ├─ 🖥️ Основной сервер: <b>{host_online}</b>")
-        
-        for i, node_line in enumerate(nodes_online_list):
-            prefix = "│  └─" if i == len(nodes_online_list) - 1 else "│  ├─"
-            text_parts.append(f"{prefix} {node_line}")
+            is_last = (i == len(nodes) - 1)
+            prefix = "└─" if is_last else "├─"
+            
+            text_parts.append(f"{prefix} {status_icon} {node_name}: <code>{node_status}</code>")
+    else:
+        text_parts.append("└─ 🤷‍♂️ Внешние узлы не настроены.")
     
     text = "\n".join(text_parts)
 
