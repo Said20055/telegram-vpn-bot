@@ -75,7 +75,6 @@ async def _handle_referral_bonus(user_who_paid_id: int, marzban: MarzClientCache
             await bot.send_message(referrer.user_id, f"🎉 Ваш реферал совершил первую оплату! Вам начислено <b>{bonus_days} бонусных дней</b>.")
         except Exception: pass
             
-    db.set_first_payment_done(user_who_paid_id)
 
 
 # --- 3. Логика уведомления пользователя об оплате и показ ключей ---
@@ -180,6 +179,8 @@ async def yookassa_webhook_handler(request: web.Request):
         user_id = int(metadata['user_id'])
         tariff_id = int(metadata['tariff_id'])
         tariff = db.get_tariff_by_id(tariff_id)
+        user_from_db = db.get_user(user_id)
+        is_first_payment = not user_from_db.is_first_payment_made
 
         if not tariff:
             logger.error(f"Webhook for non-existent tariff_id: {tariff_id}")
@@ -190,7 +191,10 @@ async def yookassa_webhook_handler(request: web.Request):
         # Получаем объекты бота и клиента Marzban из приложения
         bot: Bot = request.app['bot']
         marzban: MarzClientCache = request.app['marzban']
-         
+        
+        if is_first_payment:
+            db.set_first_payment_done(user_id)
+            logger.info(f"Marked first payment for user {user_id}.")
         # Вызываем наши функции последовательно
         is_new = await _handle_user_payment(user_id, tariff, marzban)
         await _handle_referral_bonus(user_id, marzban, bot)

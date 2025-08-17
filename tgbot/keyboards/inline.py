@@ -195,6 +195,30 @@ def promo_type_keyboard() -> InlineKeyboardMarkup:
 
 # --- 2.5. Рассылка ---
 
+
+# tgbot/keyboards/inline.py (или admin_keyboards.py)
+
+def broadcast_audience_keyboard():
+    """Клавиатура для выбора аудитории рассылки."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="👥 Всем пользователям", callback_data="broadcast_audience_all")
+    builder.button(text="⏳ Тем, кто не покупал", callback_data="broadcast_audience_never")
+    builder.button(text="❌ Отмена", callback_data="admin_main_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+def broadcast_promo_keyboard():
+    """Клавиатура для добавления промокода к рассылке."""
+    builder = InlineKeyboardBuilder()
+    # Эта кнопка будет вести в FSM для ввода промокода
+    builder.button(text="🎁 Прикрепить промокод", callback_data="broadcast_attach_promo")
+    # Эта кнопка пропустит шаг с промокодом
+    builder.button(text="➡️ Продолжить без промокода", callback_data="broadcast_skip_promo")
+    builder.button(text="❌ Отмена", callback_data="admin_main_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 def confirm_broadcast_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура для подтверждения рассылки."""
     builder = InlineKeyboardBuilder()

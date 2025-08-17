@@ -15,6 +15,7 @@ instruction_router = Router(name="instruction")
 def os_client_keyboard():
     """Создает клавиатуру со ссылками на рекомендованные клиенты для VLESS."""
     builder = InlineKeyboardBuilder()
+    builder.button(text="👤 Мой профиль", callback_data="my_profile")
     builder.button(text="🤖 Android (V2RayTun)", url="https://play.google.com/store/apps/details?id=com.v2raytun.android")
     builder.button(text="🍏 iOS (V2RayTun)", url="https://apps.apple.com/ru/app/v2raytun/id6476628951")
     builder.button(text="💻 Windows (NekoBox)", url="https://github.com/MatsuriDayo/nekobox/releases/latest")

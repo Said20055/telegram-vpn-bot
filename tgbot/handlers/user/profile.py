@@ -13,7 +13,7 @@ from loader import logger
 from marzban.init_client import MarzClientCache
 from tgbot.keyboards.inline import profile_keyboard, back_to_main_menu_keyboard, single_key_view_keyboard
 from tgbot.services import qr_generator
-from tgbot.services.utils import format_traffic, get_marzban_user_info, get_user_attribute
+from tgbot.services.utils import _parse_link, format_traffic, get_marzban_user_info, get_user_attribute
 from urllib.parse import quote_plus
 
 profile_router = Router()
@@ -105,73 +105,47 @@ async def my_profile_callback_handler(call: CallbackQuery, marzban: MarzClientCa
 # --- Хендлер для "Мои ключи" (остается почти без изменений) ---
 @profile_router.callback_query(F.data == "my_keys")
 async def my_keys_handler(call: CallbackQuery, marzban: MarzClientCache):
-    """
-    Показывает меню с кнопками для каждого ключа,
-    объединяя информацию об узлах и протоколах. (Адаптировано под API, возвращающее список)
-    """
+    """Меню с кнопками для каждого ключа (с хардкодом первого ключа)."""
     await call.answer("Загружаю список ключей...")
-    
+
     db_user, marzban_user = await get_marzban_user_info(call, marzban)
-    if not marzban_user: return
-
-    links = get_user_attribute(marzban_user, 'links', [])
-    if not links:
-        # ... (обработка, если ключей нет)
+    if not marzban_user:
         return
-        
-    # --- ИСПРАВЛЕННАЯ ЛОГИКА ---
-    
-    # 1. Параллельно получаем все необходимые данные
-    nodes, inbounds_list = await asyncio.gather(
-        marzban.get_nodes(),
-        marzban.get_inbounds() # Этот метод теперь должен возвращать СПИСОК
-    )
 
-    # 2. Создаем карты для быстрого поиска
-    address_to_name_map = {node['address']: node['name'] for node in nodes}
+    links = get_user_attribute(marzban_user, "links", [])
+    if not links:
+        await call.message.answer("❌ У вас пока нет ключей.")
+        return
+
+    # Получаем список нод
+    nodes = await marzban.get_nodes()
+    address_to_name = {node["address"]: node["name"] for node in nodes}
     main_domain = marzban._config.webhook.domain
-    if main_domain not in address_to_name_map:
-        address_to_name_map[main_domain] = "Основной сервер"
-        
-    # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
-    # Создаем карту портов, итерируясь по СПИСКУ inbounds_list
-    port_to_protocol_map = {}
-    for inbound_data in inbounds_list:
-        if isinstance(inbound_data, dict):
-            port = str(inbound_data.get('port'))
-            protocol = inbound_data.get('protocol', 'protocol?').upper()
-            port_to_protocol_map[port] = protocol
-    
-    # 3. Создаем клавиатуру (этот блок остается без изменений)
-    keys_keyboard = InlineKeyboardBuilder()
-    
+    address_to_name.setdefault(main_domain, "Основной сервер")
+
+    # Создаём клавиатуру
+    kb = InlineKeyboardBuilder()
+
     for i, link in enumerate(links):
-        try:
-            parsed_url = urlparse(link)
-            server_address = parsed_url.hostname or parsed_url.netloc.split('@')[-1].split(':')[0]
-            server_port = str(parsed_url.port or parsed_url.netloc.split(':')[-1])
-        except Exception:
-            server_address, server_port = "unknown", "unknown"
-            
-        node_name = address_to_name_map.get(server_address, "Неизвестный узел")
-        protocol_name = port_to_protocol_map.get(server_port, "")
-        
-        button_text = f"🔑 {node_name}"
-        if protocol_name:
-            button_text += f" ({protocol_name})"
-        
-        keys_keyboard.button(text=button_text, callback_data=f"show_key_{i}")
-        
-    keys_keyboard.button(text="⬅️ Назад в профиль", callback_data="my_profile")
-    keys_keyboard.adjust(1)
-        
-    text = "🔑 <b>Ваши ключи</b>\n\nВыберите сервер и протокол для просмотра ключа:"
-    
+        if i == 0:
+            button_text = "🇳🇱 VacVPN Амстердам"
+        else:
+            server_address, _ = _parse_link(link)
+            node_name = address_to_name.get(server_address, "Неизвестный узел")
+            button_text = f"{node_name}"
+
+        kb.button(text=button_text, callback_data=f"show_key_{i}")
+
+    kb.button(text="⬅️ Назад в главное меню", callback_data="back_to_main_menu")
+    kb.adjust(1)
+
+    text = "🔑 <b>Ваши ключи</b>\n\nВыберите сервер для просмотра ключа:"
     try:
-        await call.message.edit_text(text, reply_markup=keys_keyboard.as_markup())
-    except TelegramBadRequest: # Если старое сообщение было с фото
+        await call.message.edit_text(text, reply_markup=kb.as_markup())
+    except TelegramBadRequest:  # если старое сообщение было с фото
         await call.message.delete()
-        await call.message.answer(text, reply_markup=keys_keyboard.as_markup())
+        await call.message.answer(text, reply_markup=kb.as_markup())
+
 
 @profile_router.callback_query(F.data.startswith("show_key_"))
 async def show_single_key_handler(call: CallbackQuery, marzban: MarzClientCache):

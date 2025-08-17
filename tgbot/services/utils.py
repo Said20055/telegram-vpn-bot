@@ -1,6 +1,7 @@
 # tgbot/services/utils.py (ПРАВИЛЬНАЯ ВЕРСИЯ)
 
 from datetime import datetime
+from urllib.parse import urlparse
 from marzban.init_client import MarzClientCache
 from database import requests as db
 from aiogram import types
@@ -90,3 +91,12 @@ def get_user_attribute(user_obj, key, default=None):
     if isinstance(user_obj, dict):
         return user_obj.get(key, default)
     return getattr(user_obj, key, default)
+
+def _parse_link(link: str):
+    try:
+        parsed = urlparse(link)
+        host = parsed.hostname or parsed.netloc.split("@")[-1].split(":")[0]
+        port = str(parsed.port or parsed.netloc.split(":")[-1])
+        return host, port
+    except Exception:
+        return "unknown", "unknown"

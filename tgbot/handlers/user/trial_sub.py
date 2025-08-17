@@ -67,7 +67,7 @@ async def start_trial_process_handler(call: CallbackQuery, bot: Bot, marzban:  M
         await call.answer("Вы уже использовали свой пробный период.", show_alert=True)
         # Заменяем приветственное сообщение на стандартное главное меню
         await call.message.edit_text(
-            f"👋 Добро пожаловать, <b>{call.from_user.full_name}</b>!",
+            f"👋 Привет, <b>{call.from_user.full_name}</b>!",
             reply_markup=main_menu_keyboard()
         )
         return # Прерываем выполнение функции
@@ -116,6 +116,6 @@ async def handle_check_subscription(call: CallbackQuery, bot: Bot, marzban: Marz
         await call.answer("✅ Отлично! Спасибо за подписку. Активируем пробный период...", show_alert=True)
         await call.message.delete()
         # --- ИЗМЕНЕНИЕ: Убираем bot из вызова ---
-        await give_trial_subscription(user_id=user_id, bot=bot, xui=marzban, chat_id=call.message.chat.id)
+        await give_trial_subscription(user_id=user_id, bot=bot, marzban=marzban, chat_id=call.message.chat.id)
     else:
         await call.answer("Вы еще не подписались на все каналы. Пожалуйста, попробуйте снова.", show_alert=True)

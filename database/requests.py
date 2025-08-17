@@ -139,6 +139,16 @@ def get_users_with_expiring_subscription_in_hours(hours: int):
         User.subscription_end_date <= expiration_limit
     )
 
+@db_connection
+def get_users_without_first_payment() -> list[int]:
+    """Возвращает ID пользователей, которые ни разу не платили."""
+    return [
+        user_id for user_id, in User.select(User.user_id)
+        .where(User.is_first_payment_made == False) # <-- Условие должно быть именно таким
+        .tuples()
+        .iterator()
+    ]
+
 # =============================================================================
 # --- Функции для работы с тарифами (Tariff) ---
 # =============================================================================
@@ -208,6 +218,8 @@ def get_user_referrals(user_id: int):
 def count_users_with_first_payment():
     """Считает общее количество пользователей, совершивших первую оплату."""
     return User.select().where(User.is_first_payment_made == True).count()
+
+
 
 # =============================================================================
 # --- Функции для поддержки ---

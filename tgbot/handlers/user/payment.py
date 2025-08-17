@@ -60,6 +60,69 @@ async def buy_subscription_callback_handler(call: CallbackQuery, state: FSMConte
 # =============================================================================
 # --- БЛОК 2: ПРИМЕНЕНИЕ ПРОМОКОДА ---
 # =============================================================================
+
+
+@payment_router.callback_query(F.data.startswith("apply_promo_"))
+async def apply_promo_from_broadcast(call: CallbackQuery, state: FSMContext):
+    """
+    Обрабатывает нажатие на кнопку с промокодом из рассылки.
+    Применяет скидку и показывает меню тарифов.
+    """
+    await call.answer() # Сразу отвечаем, чтобы убрать "часики"
+    
+    try:
+        promo_code = call.data.split("_")[2]
+    except IndexError:
+        await call.answer("Ошибка в данных промокода.", show_alert=True)
+        return
+
+    promo = db.get_promo_code(promo_code)
+    user_id = call.from_user.id
+
+    # --- Валидация промокода ---
+    
+    # Отдельно обрабатываем случай, когда пользователь уже использовал код
+    if promo and db.has_user_used_promo(user_id, promo.id):
+        # Отправляем информативное сообщение и сразу показываем тарифы без скидки
+        await call.message.edit_text(
+            "❗️ <b>Вы уже использовали этот промокод.</b>\n\n"
+            "Каждый промокод можно использовать только один раз.\n"
+            "Пожалуйста, выберите тариф по стандартной цене:",
+            reply_markup=tariffs_keyboard(list(db.get_active_tariffs()))
+        )
+        return
+
+    # Остальные проверки
+    error_text = None
+    if not promo:
+        error_text = "Промокод не найден."
+    elif promo.discount_percent == 0:
+        error_text = "Этот промокод дает бонусные дни, а не скидку. Введите его вручную в разделе «Промокод»."
+    elif promo.uses_left <= 0:
+        error_text = "К сожалению, этот промокод уже закончился."
+    elif promo.expire_date and datetime.now() > promo.expire_date:
+        error_text = "Срок действия этого промокода истек."
+    
+    if error_text:
+        await call.answer(error_text, show_alert=True)
+        return
+
+    # --- Применение промокода и показ тарифов ---
+    try:
+        # Отмечаем, что пользователь использовал промокод
+        db.use_promo_code(user_id, promo)
+        
+        # Сохраняем скидку в FSM для следующего шага
+        await state.set_state(None)
+        await state.update_data(discount=promo.discount_percent, promo_code=promo_code)
+        
+        # Вызываем нашу универсальную функцию для показа тарифов со скидкой
+        await show_tariffs_logic(call, state)
+
+    except Exception as e:
+        logger.error(f"Error applying promo code '{promo_code}' for user {user_id}: {e}", exc_info=True)
+        await call.answer("Произошла непредвиденная ошибка. Пожалуйста, попробуйте позже.", show_alert=True)
+
 async def _start_promo_input(event: Message | CallbackQuery, state: FSMContext):
     """
     Универсальная функция для начала сценария ввода промокода.
