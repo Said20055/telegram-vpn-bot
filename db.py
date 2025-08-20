@@ -32,7 +32,7 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String)
     reg_date: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.now)
     subscription_end_date: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=True)
-    xui_username: Mapped[str] = mapped_column(String, unique=True, nullable=True)
+    marzban_username: Mapped[str] = mapped_column(String, unique=True, nullable=True)
     
     # --- НОВОЕ ПОЛЕ ДЛЯ ОТСЛЕЖИВАНИЯ ТРИАЛА ---
     has_received_trial: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

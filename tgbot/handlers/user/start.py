@@ -1,5 +1,6 @@
 # tgbot/handlers/user/start.py (Полная версия)
 
+import asyncio
 from aiogram import Router, F, Bot
 from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.types import Message, CallbackQuery

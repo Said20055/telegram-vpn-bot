@@ -1,6 +1,6 @@
 # database/requests.py (Полностью исправленная и отрефакторенная версия)
 
-from db import Channel, db, User, Tariff, PromoCode, UsedPromoCode, async_session_maker
+from db import Channel, User, Tariff, PromoCode, UsedPromoCode, async_session_maker
 
 from sqlalchemy import select, update, delete, func
 
@@ -53,10 +53,10 @@ async def get_all_users_ids() -> list[int]:
         result = await session.execute(stmt)
         return result.scalars().all()
 
-async def update_user_marzban_username(user_id: int, xui_username: str):
-    """Асинхронно обновляет имя пользователя для панели 3x-ui."""
+async def update_user_marzban_username(user_id: int, marzban_username: str):
+    """Асинхронно обновляет имя пользователя для панели marzban."""
     async with async_session_maker() as session:
-        stmt = update(User).where(User.user_id == user_id).values(xui_username=xui_username)
+        stmt = update(User).where(User.user_id == user_id).values(marzban_username=marzban_username)
         await session.execute(stmt)
         await session.commit()
 
