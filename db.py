@@ -71,8 +71,8 @@ class Channel(Base):
     __tablename__ = 'channels'
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     channel_id: Mapped[int] = mapped_column(BigInteger, unique=True)
-    channel_name: Mapped[str] = mapped_column(String)
-    channel_url: Mapped[str] = mapped_column(String)
+    title: Mapped[str] = mapped_column(String)
+    invite_link: Mapped[str] = mapped_column(String)
 
 
 # --- 4. Функция для создания таблиц ---
