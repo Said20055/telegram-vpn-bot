@@ -30,7 +30,7 @@ async def show_tariffs_logic(event: Message | CallbackQuery, state: FSMContext):
     fsm_data = await state.get_data()
     discount = fsm_data.get("discount")
     
-    active_tariffs = db.get_active_tariffs()
+    active_tariffs = await db.get_active_tariffs()
     tariffs_list = list(active_tariffs) if active_tariffs else []
 
     text = "Пожалуйста, выберите тарифный план:"
@@ -76,19 +76,19 @@ async def apply_promo_from_broadcast(call: CallbackQuery, state: FSMContext):
         await call.answer("Ошибка в данных промокода.", show_alert=True)
         return
 
-    promo = db.get_promo_code(promo_code)
+    promo = await db.get_promo_code(promo_code)
     user_id = call.from_user.id
 
     # --- Валидация промокода ---
     
     # Отдельно обрабатываем случай, когда пользователь уже использовал код
-    if promo and db.has_user_used_promo(user_id, promo.id):
+    if promo and await db.has_user_used_promo(user_id, promo.id):
         # Отправляем информативное сообщение и сразу показываем тарифы без скидки
         await call.message.edit_text(
             "❗️ <b>Вы уже использовали этот промокод.</b>\n\n"
             "Каждый промокод можно использовать только один раз.\n"
             "Пожалуйста, выберите тариф по стандартной цене:",
-            reply_markup=tariffs_keyboard(list(db.get_active_tariffs()))
+            reply_markup=tariffs_keyboard(list(await db.get_active_tariffs()))
         )
         return
 
@@ -110,7 +110,7 @@ async def apply_promo_from_broadcast(call: CallbackQuery, state: FSMContext):
     # --- Применение промокода и показ тарифов ---
     try:
         # Отмечаем, что пользователь использовал промокод
-        db.use_promo_code(user_id, promo)
+        await db.use_promo_code(user_id, promo)
         
         # Сохраняем скидку в FSM для следующего шага
         await state.set_state(None)
@@ -158,7 +158,7 @@ async def enter_promo_callback_handler(call: CallbackQuery, state: FSMContext):
 async def process_promo_code(message: Message, state: FSMContext, bot: Bot, marzban: MarzClientCache):
     """Обрабатывает введенный промокод."""
     code = message.text.upper()
-    promo = db.get_promo_code(code)
+    promo = await db.get_promo_code(code)
     user_id = message.from_user.id
 
     await message.delete() # Сразу удаляем сообщение с кодом
@@ -167,17 +167,17 @@ async def process_promo_code(message: Message, state: FSMContext, bot: Bot, marz
     if not promo: error_text = "Промокод не найден."
     elif promo.uses_left <= 0: error_text = "Этот промокод уже закончился."
     elif promo.expire_date and promo.expire_date < datetime.now(): error_text = "Срок действия этого промокода истек."
-    elif db.has_user_used_promo(user_id, promo.id): error_text = "Вы уже использовали этот промокод."
+    elif await db.has_user_used_promo(user_id, promo.id): error_text = "Вы уже использовали этот промокод."
 
     if error_text:
         await message.answer(error_text)
         return
 
-    db.use_promo_code(user_id, promo)
+    await db.use_promo_code(user_id, promo)
 
     if promo.bonus_days > 0:
         await state.clear()
-        user_from_db = db.get_user(user_id) # Получаем юзера один раз
+        user_from_db = await db.get_user(user_id) # Получаем юзера один раз
         marzban_username = (user_from_db.marzban_username or f"user_{user_id}").lower()
         
         try:
@@ -185,9 +185,9 @@ async def process_promo_code(message: Message, state: FSMContext, bot: Bot, marz
             await marzban.modify_user(username=marzban_username, expire_days=promo.bonus_days)
             
             # Обновляем наши локальные данные ТОЛЬКО после успешной операции в Marzban
-            db.extend_user_subscription(user_id, promo.bonus_days)
+            await db.extend_user_subscription(user_id, promo.bonus_days)
             if not user_from_db.marzban_username:
-                db.update_user_marzban_username(user_id, marzban_username)
+                await db.update_user_marzban_username(user_id, marzban_username)
             
             await message.answer(f"✅ Промокод успешно применен! Вам начислено <b>{promo.bonus_days} бонусных дней</b>.")
             # Показываем обновленный профиль
@@ -213,7 +213,7 @@ async def select_tariff_handler(call: CallbackQuery, state: FSMContext, bot: Bot
     await call.answer()
     
     tariff_id = int(call.data.split("_")[2])
-    tariff = db.get_tariff_by_id(tariff_id)
+    tariff = await db.get_tariff_by_id(tariff_id)
     if not tariff:
         await call.message.edit_text("Ошибка! Тариф не найден.", reply_markup=back_to_main_menu_keyboard())
         return

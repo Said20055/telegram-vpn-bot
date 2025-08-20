@@ -27,9 +27,9 @@ async def admin_stats_handler(call: CallbackQuery, marzban: MarzClientCache):
     await call.answer("Собираю статистику с серверов...")
     
     # --- 1. Сначала выполняем все СИНХРОННЫЕ запросы к нашей БД ---
-    total_users = db.count_all_users()
-    active_subs = db.count_active_subscriptions()
-    first_payments_total = db.count_users_with_first_payment()
+    total_users = await db.count_all_users()
+    active_subs = await db.count_active_subscriptions()
+    first_payments_total = await db.count_users_with_first_payment()
     
     # --- 2. Затем параллельно выполняем все АСИНХРОННЫЕ запросы к API Marzban ---
     # Теперь мы передаем в gather уже вызванные асинхронные функции

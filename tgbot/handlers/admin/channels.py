@@ -18,7 +18,7 @@ class AdminChannelsFSM(StatesGroup):
 # --- Главное меню управления каналами ---
 @admin_channels_router.callback_query(F.data == "admin_channels_menu")
 async def channels_menu(call: CallbackQuery):
-    channels = db.get_all_channels()
+    channels = await db.get_all_channels()
     text = "<b>📢 Управление обязательной подпиской</b>\n\nТекущие каналы:\n"
     if not channels:
         text += "<i>Список пуст.</i>"
@@ -47,7 +47,7 @@ async def add_channel_finish(message: Message, state: FSMContext, bot: Bot):
         # Пытаемся создать приватную ссылку на канал
         invite_link = await bot.create_chat_invite_link(chat.id)
         
-        db.add_channel(
+        await db.add_channel(
             channel_id=chat.id,
             title=chat.title,
             invite_link=invite_link.invite_link
@@ -71,7 +71,7 @@ async def delete_channel_start(call: CallbackQuery, state: FSMContext):
 async def delete_channel_finish(message: Message, state: FSMContext):
     try:
         channel_id = int(message.text)
-        success = db.delete_channel(channel_id)
+        success = await db.delete_channel(channel_id)
         if success:
             await message.answer(f"✅ Канал <code>{channel_id}</code> удален.")
         else:

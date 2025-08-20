@@ -46,7 +46,7 @@ async def get_marzban_user_info(event: types.Message | types.CallbackQuery, marz
     В случае ошибки отправляет сообщение пользователю и возвращает (user_from_db, None).
     """
     user_id = event.from_user.id
-    user = db.get_user(user_id)
+    user =  await db.get_user(user_id)
 
     # --- УНИВЕРСАЛЬНАЯ ФУНКЦИЯ ДЛЯ ОТПРАВКИ/РЕДАКТИРОВАНИЯ СООБЩЕНИЙ ---
     async def send_or_edit(text, reply_markup):

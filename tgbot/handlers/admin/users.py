@@ -38,7 +38,7 @@ async def show_user_card(message_or_call, user_id: int):
     Отображает карточку пользователя с информацией и кнопками управления.
     Вынесена в отдельную функцию для переиспользования.
     """
-    user = db.get_user(user_id)
+    user = await db.get_user(user_id)
     if not user:
         text = "Пользователь не найден."
         reply_markup = back_to_main_menu_keyboard()
@@ -89,9 +89,9 @@ async def find_user(message: Message, state: FSMContext):
     user = None
 
     if query.isdigit():
-        user = db.get_user(int(query))
+        user = await db.get_user(int(query))
     else:
-        user = db.get_user_by_username(query.replace("@", ""))
+        user = await db.get_user_by_username(query.replace("@", ""))
     
     if not user:
         await message.answer("Пользователь с таким ID или username не найден в базе данных бота.\n\n"
@@ -139,7 +139,7 @@ async def add_days_finish(message: Message, state: FSMContext, marzban: MarzClie
     
     await message.answer(f"⏳ Продлеваю/создаю подписку для пользователя <code>{user_id}</code> на <b>{days_to_add}</b> дн...")
 
-    user = db.get_user(user_id)
+    user = await db.get_user(user_id)
     if not user:
         await message.answer(f"Не удалось найти пользователя <code>{user_id}</code> в базе.")
         return
@@ -154,16 +154,16 @@ async def add_days_finish(message: Message, state: FSMContext, marzban: MarzClie
         # Если у пользователя не было marzban_username, значит, мы его только что создали.
         # Записываем имя в нашу БД.
         if not user.marzban_username:
-            db.update_user_marzban_username(user_id, marzban_username)
+            await db.update_user_marzban_username(user_id, marzban_username)
             logger.info(f"Admin CREATED and subscribed Marzban user '{marzban_username}' for {days_to_add} days.")
         else:
             logger.info(f"Admin EXTENDED subscription for Marzban user '{marzban_username}' by {days_to_add} days.")
 
         # Обновляем дату подписки в нашей БД.
-        db.extend_user_subscription(user_id, days=days_to_add)
+        await db.extend_user_subscription(user_id, days=days_to_add)
         
         # Получаем обновленные данные для отчета.
-        updated_user = db.get_user(user_id)
+        updated_user = await db.get_user(user_id)
         new_sub_end_date = updated_user.subscription_end_date.strftime('%d.%m.%Y')
         
         # --- 4. Отправляем отчеты об успехе ---
@@ -211,7 +211,7 @@ async def delete_user_finish(call: CallbackQuery, marzban: MarzClientCache):
     
     try:
         user_id = int(call.data.split("_")[4])
-        user = db.get_user(user_id)
+        user = await db.get_user(user_id)
         # ... (проверки на существование user) ...
         
         marzban_deletion_success = False
@@ -232,7 +232,7 @@ async def delete_user_finish(call: CallbackQuery, marzban: MarzClientCache):
             marzban_deletion_success = True # Если в Marzban и не было, считаем успехом
 
         if marzban_deletion_success:
-            db.delete_user(user.user_id)
+            await db.delete_user(user.user_id)
             await call.message.edit_text(f"✅ Пользователь <code>{user_id}</code> успешно удален.")
         else:
             await call.message.edit_text(f"❌ **Ошибка!**\n\nНе удалось удалить пользователя из Marzban даже со второй попытки. Проверьте логи Marzban.")

@@ -29,7 +29,7 @@ async def process_start_command(message: Message, command: CommandObject, bot: B
     username = message.from_user.username
     
     # 1.1. Регистрируем или получаем пользователя
-    user, created = db.get_or_create_user(user_id, full_name, username)
+    user, created = await db.get_or_create_user(user_id, full_name, username)
 
     # 1.2. Обрабатываем реферальную ссылку, если она есть
     if command and command.args and command.args.startswith('ref'):
@@ -38,7 +38,7 @@ async def process_start_command(message: Message, command: CommandObject, bot: B
             referrer_id = None
             try:
                 potential_referrer_id = int(command.args[3:])
-                if potential_referrer_id != user_id and db.get_user(potential_referrer_id):
+                if potential_referrer_id != user_id and await db.get_user(potential_referrer_id):
                     referrer_id = potential_referrer_id
             except (ValueError, IndexError, TypeError): pass
 
@@ -72,9 +72,9 @@ async def activate_referral_bonus(message: Message, referrer_id: int, marzban: M
         logger.info(f"Successfully created Marzban user '{marzban_username}' with {bonus_days} bonus days.")
         
         # Обновляем наши БД
-        db.set_user_referrer(user_id, referrer_id)
-        db.update_user_marzban_username(user_id, marzban_username)
-        db.extend_user_subscription(user_id, days=bonus_days)
+        await db.set_user_referrer(user_id, referrer_id)
+        await db.update_user_marzban_username(user_id, marzban_username)
+        await db.extend_user_subscription(user_id, days=bonus_days)
         
         await message.answer(f"🎉 Вы пришли по приглашению и получили <b>пробную подписку на {bonus_days} дня</b>!")
         
@@ -96,8 +96,8 @@ async def show_referral_info(message: Message, bot: Bot):
     user_id = message.from_user.id
     bot_info = await bot.get_me()
     referral_link = f"https://t.me/{bot_info.username}?start=ref{user_id}"
-    user_data = db.get_user(user_id)
-    referral_count = db.count_user_referrals(user_id)
+    user_data = await db.get_user(user_id)
+    referral_count = await db.count_user_referrals(user_id)
 
     text = (
         "🤝 <b>Ваша реферальная программа</b>\n\n"

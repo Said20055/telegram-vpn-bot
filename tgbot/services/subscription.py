@@ -10,7 +10,7 @@ async def check_subscription(bot: Bot, user_id: int) -> bool:
     Проверяет, подписан ли пользователь на все каналы из БД.
     Возвращает True, если подписан на все, иначе False.
     """
-    required_channels = db.get_all_channels()
+    required_channels = await db.get_all_channels()
     if not required_channels:
         return True # Если каналов в списке нет, проверка пройдена
 

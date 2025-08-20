@@ -5,16 +5,17 @@ from aiogram import Bot
 from datetime import datetime, timedelta
 
 from database import requests as db
-from tgbot.keyboards.inline import tariffs_keyboard # Импортируем клавиатуру с тарифами
+from tgbot.keyboards.inline import tariffs_keyboard
+from utils import broadcaster # Импортируем клавиатуру с тарифами
 from .utils import decline_word
-from loader import logger
+from loader import logger, config
 
 # --- 1. Основная функция, которую будет вызывать планировщик ---
 
 async def send_reminder(bot: Bot, user, text: str):
     """Универсальная функция для отправки напоминания с клавиатурой тарифов."""
     try:
-        active_tariffs = db.get_active_tariffs()
+        active_tariffs = await db.get_active_tariffs()
         tariffs_list = list(active_tariffs) if active_tariffs else []
         
         await bot.send_message(
@@ -33,9 +34,10 @@ async def check_subscriptions(bot: Bot):
     """Проверяет подписки пользователей и отправляет гибкие напоминания."""
     logger.info("Scheduler job: Running subscription check...")
     
+    count = 0
     # --- Проверка по дням (7 и 3 дня) ---
     for days_left in [7, 3]:
-        users_to_remind = db.get_users_with_expiring_subscription(days_left)
+        users_to_remind = await db.get_users_with_expiring_subscription(days_left)
         if not users_to_remind:
             continue
             
@@ -47,10 +49,12 @@ async def check_subscriptions(bot: Bot):
             "Чтобы не потерять доступ, пожалуйста, продлите ее."
         )
         for user in users_to_remind:
-            await send_reminder(bot, user, text.format(user_full_name=user.full_name))
+            ok = await send_reminder(bot, user, text.format(user_full_name=user.full_name))
+            if ok: 
+                count += 1
 
     # --- Проверка по часам (менее 24 часов) ---
-    users_less_than_day = db.get_users_with_expiring_subscription_in_hours(24)
+    users_less_than_day = await db.get_users_with_expiring_subscription_in_hours(24)
     if not users_less_than_day:
         return # Завершаем, если таких пользователей нет
         
@@ -65,8 +69,12 @@ async def check_subscriptions(bot: Bot):
             f"❗️ Ваша подписка истекает уже сегодня, осталось менее <b>{hours_left} {hour_word}</b>.\n\n"
             "Чтобы не потерять доступ, продлите ее прямо сейчас."
         )
-        await send_reminder(bot, user, text)
-
+        ok = await send_reminder(bot, user, text)
+        if ok: 
+            count += 1
+            
+    if count > 0:   
+        await broadcaster.broadcast(bot, config.tg_bot.admin_ids, "✅ Рассылка завершена. Сообщение доставлено {count} пользователям.")
 
 # --- 2. Функция для добавления всех задач в планировщик ---
 

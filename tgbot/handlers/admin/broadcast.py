@@ -90,7 +90,7 @@ async def get_promo(message: Message, state: FSMContext):
     promo_code = message.text.strip().upper()
     logger.debug(f"Admin {message.from_user.id} entered promo code: '{promo_code}'")
     
-    promo = db.get_promo_code(promo_code)
+    promo = await db.get_promo_code(promo_code)
     if not promo or promo.discount_percent == 0:
         await message.answer("❌ Ошибка: промокод не найден или он не является скидочным. Введите другой.")
         return
@@ -127,10 +127,10 @@ async def confirm_and_run_broadcast(call: CallbackQuery, state: FSMContext, bot:
     audience_text = ""
     logger.debug(f"Fetching audience '{audience}' from DB...")
     if audience == "all":
-        users_ids = db.get_all_users_ids()
+        users_ids = await db.get_all_users_ids()
         audience_text = "всем пользователям"
     elif audience == "never":
-        users_ids = db.get_users_without_first_payment()
+        users_ids = await db.get_users_without_first_payment()
         audience_text = "пользователям, не совершавшим покупку"
     
     # --- ЛОГИРОВАНИЕ РЕЗУЛЬТАТА ИЗ БД ---
@@ -160,7 +160,7 @@ async def confirm_and_run_broadcast(call: CallbackQuery, state: FSMContext, bot:
                 reply_markup=reply_markup
             )
             success_count += 1
-            await asyncio.sleep(0.03) # 33 сообщения в секунду - безопасно
+            await asyncio.sleep(0.5) 
         except Exception as e:
             errors_count += 1
             logger.warning(f"Broadcast failed for user {user_id}. Error: {e}")

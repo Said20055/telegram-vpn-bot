@@ -19,10 +19,10 @@ from tgbot.handlers.user.profile import show_profile_logic
 async def _handle_user_payment(user_id: int, tariff, marzban: MarzClientCache) -> bool:
     """Продлевает подписку в БД и создает/модифицирует пользователя в Marzban."""
     subscription_days = tariff.duration_days
-    db.extend_user_subscription(user_id, days=subscription_days)
+    await db.extend_user_subscription(user_id, days=subscription_days)
     logger.info(f"Subscription for user {user_id} in local DB extended by {subscription_days} days.")
 
-    user_from_db = db.get_user(user_id)
+    user_from_db = await db.get_user(user_id)
     marzban_username = (user_from_db.marzban_username or f"user_{user_id}").lower()
     is_new_user_for_marzban = False
     try:
@@ -32,7 +32,7 @@ async def _handle_user_payment(user_id: int, tariff, marzban: MarzClientCache) -
             await marzban.add_user(username=marzban_username, expire_days=subscription_days)
             is_new_user_for_marzban = True
         if not user_from_db.marzban_username:
-            db.update_user_marzban_username(user_id, marzban_username)
+            await db.update_user_marzban_username(user_id, marzban_username)
             
     except Exception as e:
         logger.error(f"CRITICAL: Failed to create/modify Marzban user {marzban_username}: {e}", exc_info=True)
@@ -43,12 +43,12 @@ async def _handle_user_payment(user_id: int, tariff, marzban: MarzClientCache) -
 # --- 2. Логика начисления реферального бонуса ---
 async def _handle_referral_bonus(user_who_paid_id: int, marzban: MarzClientCache, bot: Bot):
     """Проверяет и начисляет бонус рефереру."""
-    user_who_paid = db.get_user(user_who_paid_id)
+    user_who_paid = await db.get_user(user_who_paid_id)
     if not (user_who_paid and user_who_paid.referrer_id and not user_who_paid.is_first_payment_made):
         return # Если нет реферера или это не первая оплата - выходим
 
     bonus_days = 7
-    referrer = db.get_user(user_who_paid.referrer_id)
+    referrer = await db.get_user(user_who_paid.referrer_id)
     if not referrer:
         return
 
@@ -56,8 +56,8 @@ async def _handle_referral_bonus(user_who_paid_id: int, marzban: MarzClientCache
     if referrer.marzban_username:
         try:
             await marzban.modify_user(username=referrer.marzban_username, expire_days=bonus_days)
-            db.extend_user_subscription(referrer.user_id, days=bonus_days)
-            db.add_bonus_days(referrer.user_id, days=bonus_days)
+            await db.extend_user_subscription(referrer.user_id, days=bonus_days)
+            await db.add_bonus_days(referrer.user_id, days=bonus_days)
             logger.info(f"Referral bonus: Extended subscription for referrer {referrer.user_id} by {bonus_days} days.")
             await bot.send_message(
                 referrer.user_id,
@@ -65,11 +65,11 @@ async def _handle_referral_bonus(user_who_paid_id: int, marzban: MarzClientCache
             )
         except Exception as e:
             logger.error(f"Failed to apply referral bonus to user {referrer.user_id}: {e}")
-            db.add_bonus_days(referrer.user_id, days=bonus_days) # Начисляем виртуальные дни
+            await db.add_bonus_days(referrer.user_id, days=bonus_days) # Начисляем виртуальные дни
             await bot.send_message(referrer.user_id, "Не удалось продлить вашу подписку, бонусные дни зачислены на ваш баланс.")
     else:
         # Если у реферера нет аккаунта, просто даем виртуальные дни
-        db.add_bonus_days(referrer.user_id, days=bonus_days)
+        await db.add_bonus_days(referrer.user_id, days=bonus_days)
         logger.info(f"Referral bonus: Added {bonus_days} virtual bonus days to user {referrer.user_id}.")
         try:
             await bot.send_message(referrer.user_id, f"🎉 Ваш реферал совершил первую оплату! Вам начислено <b>{bonus_days} бонусных дней</b>.")
@@ -139,7 +139,7 @@ async def _log_transaction(
     is_new_user: bool
 ):
     """Формирует и отправляет лог о транзакции в специальную тему."""
-    user = db.get_user(user_id)
+    user = await db.get_user(user_id)
     if not user: return
     
     # Определяем, была ли это первая покупка или продление
@@ -178,8 +178,8 @@ async def yookassa_webhook_handler(request: web.Request):
         metadata = notification.object.metadata
         user_id = int(metadata['user_id'])
         tariff_id = int(metadata['tariff_id'])
-        tariff = db.get_tariff_by_id(tariff_id)
-        user_from_db = db.get_user(user_id)
+        tariff = await db.get_tariff_by_id(tariff_id)
+        user_from_db = await db.get_user(user_id)
         is_first_payment = not user_from_db.is_first_payment_made
 
         if not tariff:
@@ -193,7 +193,7 @@ async def yookassa_webhook_handler(request: web.Request):
         marzban: MarzClientCache = request.app['marzban']
         
         if is_first_payment:
-            db.set_first_payment_done(user_id)
+            await db.set_first_payment_done(user_id)
             logger.info(f"Marked first payment for user {user_id}.")
         # Вызываем наши функции последовательно
         is_new = await _handle_user_payment(user_id, tariff, marzban)

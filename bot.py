@@ -14,7 +14,7 @@ from aiohttp import web
 from loader import bot, config, logger, marzban_client
 
 # --- ШАГ 2: Импортируем наши новые модули и хендлеры ---
-from db import setup_database
+from db import setup_database_sync
 from tgbot.handlers import routers_list
 from tgbot.middlewares.flood import ThrottlingMiddleware
 from tgbot.handlers.webhook_handlers import yookassa_webhook_handler
@@ -24,7 +24,7 @@ scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
 async def on_startup(bot, marzban): # Добавили marzban в аргументы
     """Выполняется при запуске бота."""
     # 1. Инициализируем базу данных
-    setup_database()
+    setup_database_sync()
 
     # 2. Запускаем планировщик
     try:

@@ -30,9 +30,9 @@ async def give_trial_subscription(user_id: int, bot: Bot, marzban: MarzClientCac
         logger.info(f"Successfully created 3x-ui user '{marzban_username}' with {trial_days} trial days for user {user_id}.")
 
         # 2. Обновляем нашу базу данных
-        db.update_user_marzban_username(user_id, marzban_username)
-        db.extend_user_subscription(user_id, days=trial_days)
-        db.set_user_trial_received(user_id)
+        await db.update_user_marzban_username(user_id, marzban_username)
+        await db.extend_user_subscription(user_id, days=trial_days)
+        await db.set_user_trial_received(user_id)
 
         # 3. Отправляем поздравительное сообщение
         await bot.send_message(
@@ -60,7 +60,7 @@ async def start_trial_process_handler(call: CallbackQuery, bot: Bot, marzban:  M
     
     # --- НОВАЯ, ВАЖНАЯ ПРОВЕРКА ---
     # 1. Получаем пользователя из БД
-    user = db.get_user(user_id)
+    user = await db.get_user(user_id)
     
     # 2. Проверяем, получал ли он уже триал
     if user and user.has_received_trial:
@@ -82,7 +82,7 @@ async def start_trial_process_handler(call: CallbackQuery, bot: Bot, marzban:  M
         await give_trial_subscription(user_id, bot, marzban, call.message.chat.id)
     else:
         # Если не подписан, показываем каналы
-        channels = db.get_all_channels()
+        channels = await db.get_all_channels()
         if not channels:
             logger.warning(f"User {user_id} is starting trial, but no channels are in DB. Giving trial immediately.")
             await call.answer("Активируем пробный период...", show_alert=True)
@@ -103,7 +103,7 @@ async def start_trial_process_handler(call: CallbackQuery, bot: Bot, marzban:  M
 async def handle_check_subscription(call: CallbackQuery, bot: Bot, marzban: MarzClientCache):
     user_id = call.from_user.id
     
-    user = db.get_user(user_id)
+    user = await db.get_user(user_id)
     if user and user.has_received_trial:
         await call.answer("Вы уже активировали свою подписку.", show_alert=True)
         await call.message.delete()
