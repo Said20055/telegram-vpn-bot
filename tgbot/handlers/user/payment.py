@@ -37,7 +37,7 @@ async def show_tariffs_logic(event: Message | CallbackQuery, state: FSMContext):
     if discount:
         text = f"✅ Промокод на <b>{discount}%</b> применен!\n\n" + text
 
-    reply_markup = tariffs_keyboard(tariffs_list)
+    reply_markup = tariffs_keyboard(tariffs_list, promo_procent=discount or 0)
 
     if not tariffs_list:
         text = "К сожалению, сейчас нет доступных тарифов для покупки."

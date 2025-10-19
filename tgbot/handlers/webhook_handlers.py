@@ -47,7 +47,7 @@ async def _handle_referral_bonus(user_who_paid_id: int, marzban: MarzClientCache
     if not (user_who_paid and user_who_paid.referrer_id and not user_who_paid.is_first_payment_made):
         return # Если нет реферера или это не первая оплата - выходим
 
-    bonus_days = 7
+    bonus_days = 30
     referrer = await db.get_user(user_who_paid.referrer_id)
     if not referrer:
         return
@@ -192,9 +192,7 @@ async def yookassa_webhook_handler(request: web.Request):
         bot: Bot = request.app['bot']
         marzban: MarzClientCache = request.app['marzban']
         
-        if is_first_payment:
-            await db.set_first_payment_done(user_id)
-            logger.info(f"Marked first payment for user {user_id}.")
+        
         # Вызываем наши функции последовательно
         is_new = await _handle_user_payment(user_id, tariff, marzban)
         await _handle_referral_bonus(user_id, marzban, bot)
@@ -206,7 +204,11 @@ async def yookassa_webhook_handler(request: web.Request):
         is_new_user=is_new
     )
         await _notify_user_and_show_keys(user_id, tariff, marzban, bot, request)
-
+        
+        if is_first_payment:
+            await db.set_first_payment_done(user_id)
+            logger.info(f"Marked first payment for user {user_id}.")
+            
         return web.Response(status=200)
 
     except Exception as e:

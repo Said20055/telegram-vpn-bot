@@ -20,10 +20,10 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
     builder.button(text='🔑 Мои ключи', callback_data='my_keys')
     builder.button(text='🤝 Реферальная программа', callback_data='referral_program')
     builder.button(text="📲 Инструкция по подключению", callback_data="instruction_info")
-    builder.button(text="🎁 Ввести промокод", callback_data="enter_promo_code")
+    builder.button(text="🎁 Промокод", callback_data="enter_promo_code")
     builder.button(text="💬 Поддержка", callback_data="support_chat_start")
-    builder.button(text="🎁 Бесплатная подписка", callback_data="start_trial_process")
-    builder.adjust(1, 2, 2, 2, 1) # Немного изменил расположение для симметрии
+    builder.button(text="🌟 Бесплатная подписка", callback_data="start_trial_process")
+    builder.adjust(1, 1, 2, 2, 1) # Немного изменил расположение для симметрии
     return builder.as_markup()
 
 
@@ -42,15 +42,24 @@ def profile_keyboard(subscription_url: str) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def tariffs_keyboard(tariffs: list[Tariff]) -> InlineKeyboardMarkup:
+def tariffs_keyboard(tariffs: list[Tariff], promo_procent: int = 0) -> InlineKeyboardMarkup:
     """Создает клавиатуру со списком тарифов для покупки."""
     builder = InlineKeyboardBuilder()
-    for tariff in tariffs:
-        builder.button(
+    if promo_procent > 0:
+        for tariff in tariffs:
+            discounted_price = int(tariff.price * (1-promo_procent / 100))
+            builder.button(
+                text=f"{tariff.name} - {discounted_price} RUB (скидка {promo_procent}%)",
+                callback_data=f"select_tariff_{tariff.id}"
+            )
+    else:
+        for tariff in tariffs:
+            builder.button(
             text=f"{tariff.name} - {tariff.price} RUB",
             callback_data=f"select_tariff_{tariff.id}"
         )
-    builder.button(text="⬅️ Назад в главное меню", callback_data="back_to_main_menu")
+        builder.button(text="⬅️ Назад в главное меню", callback_data="back_to_main_menu")
+    
     builder.adjust(1)
     return builder.as_markup()
 

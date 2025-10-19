@@ -87,8 +87,8 @@ def schedule_jobs(scheduler: AsyncIOScheduler, bot: Bot):
     scheduler.add_job(
         check_subscriptions, 
         trigger='cron', 
-        hour=9,        # Указываем час
-        minute=30,          # Указываем минуту
+        hour=12,        # Указываем час
+        minute=49,          # Указываем минуту
         kwargs={'bot': bot}
     )
     

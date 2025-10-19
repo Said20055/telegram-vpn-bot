@@ -15,7 +15,7 @@ trial_sub_router = Router()
 
 async def give_trial_subscription(user_id: int, bot: Bot, marzban: MarzClientCache, chat_id: int):
     """
-    Создает пользователя в 3x-ui на 14 дней, обновляет БД и отправляет сообщение.
+    Создает пользователя в  marzban на 7 дней, обновляет БД и отправляет сообщение.
     Принимает только ID, чтобы быть полностью независимой.
     """
     trial_days = 7

@@ -66,7 +66,7 @@ async def process_start_command(message: Message, command: CommandObject, bot: B
 async def activate_referral_bonus(message: Message, referrer_id: int, marzban: MarzClientCache, bot: Bot):
     """Вспомогательная функция для активации реферального бонуса."""
     user_id = message.from_user.id
-    bonus_days = 3
+    bonus_days = 30
     marzban_username = f"user_{user_id}"
     try:
         await marzban.add_user(username=marzban_username, expire_days=bonus_days)
@@ -108,7 +108,7 @@ async def show_referral_info(message: Message, bot: Bot):
         "<i>(нажмите, чтобы скопировать)</i>\n\n"
         f"👤 <b>Вы пригласили:</b> {referral_count} чел.\n"
         f"🎁 <b>Ваши бонусные дни:</b> {user_data.referral_bonus_days if user_data else 0} дн.\n\n"
-        "Вы будете получать <b>7 бонусных дней</b> за каждую первую оплату подписки вашим другом."
+        "Вы будете получать <b>30 бонусных дней</b> за каждую первую оплату подписки вашим другом."
     )
     
     # Если это колбэк, редактируем сообщение. Если команда - отправляем новое.
