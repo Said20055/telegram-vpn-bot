@@ -16,3 +16,14 @@ qrcode[Pil]
 apscheduler
 asyncpg  # Драйвер для PostgreSQL
 SQLAlchemy>=2.0
+
+
+fastapi
+uvicorn
+python-multipart
+jinja2
+argon2-cffi
+email-validator
+passlib[bcrypt] # Для хеширования паролей
+python-jose[cryptography] # Для токенов авторизации
+fastapi-mail

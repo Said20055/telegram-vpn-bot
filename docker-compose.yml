@@ -20,6 +20,24 @@ services:
       - ${CERT_FULLCHAIN_PATH}:/etc/nginx/certs/fullchain.pem
       - ${CERT_KEY_PATH}:/etc/nginx/certs/privkey.pem
       - ./certbot/data:/var/www/certbot
+    depends_on:
+      - vpn_site
+      - marzban
+      - vpn_bot
+
+  vpn_site:
+    image: free_vpn_bot # Используем тот же образ, что и бот!
+    container_name: free_vpn_site
+    command: uvicorn webapp.main:app --host 0.0.0.0 --port 8000
+    restart: always
+    env_file:
+      - ".env"
+    ports:
+      - "8000:8000" # Пробрасываем порт сайта
+    depends_on:
+      - marzban
+    networks:
+      - free_vpn_bot
   marzban:
     image: gozargah/marzban:v0.8.4
     container_name: free_vpn_bot_marzban

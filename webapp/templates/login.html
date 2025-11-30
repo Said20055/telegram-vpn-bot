@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container d-flex align-items-center justify-content-center glass-container" style="min-height: 80vh;">
+    <div class="col-12 col-md-5 col-lg-4">
+        
+        <div class="card glass-card p-4 text-white">
+            <div class="card-body">
+                <h3 class="text-center fw-bold mb-4">Вход</h3>
+                
+                {% if error %}
+                    <div class="alert alert-danger py-2 mb-3 text-center" style="background: rgba(220, 53, 69, 0.2); border: 1px solid #dc3545; color: #ffb3b9;">
+                        {{ error }}
+                    </div>
+                {% endif %}
+                
+                <form action="/login" method="post">
+                    <div class="mb-3">
+                        <label class="form-label text-gray ps-1">Email</label>
+                        <input type="email" name="email" class="form-control" placeholder="name@example.com" required
+                            style="background: rgba(0,0,0,0.3); border-color: rgba(255,255,255,0.1); color: white;">
+                    </div>
+
+                    <div class="mb-1">
+                        <label class="form-label text-gray ps-1">Пароль</label>
+                        <input type="password" name="password" class="form-control" placeholder="•••••••" required
+                            style="background: rgba(0,0,0,0.3); border-color: rgba(255,255,255,0.1); color: white;">
+                    </div>
+
+                    <!-- Ссылка справа -->
+                    <div class="d-flex justify-content-end mb-3">
+                        <a href="/forgot-password" class="small text-muted text-decoration-none"
+                        style="font-size: 0.85rem;">Забыли пароль?</a>
+                    </div>
+
+                    <button type="submit" class="btn btn-orange w-100 py-2 fw-bold shadow-sm">Войти</button>
+                </form>
+
+
+                
+                <div class="mt-4 text-center">
+                    <span class="text-gray">Нет аккаунта?</span>
+                    <a href="/register" class="text-warning fw-bold text-decoration-none">Зарегистрироваться</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

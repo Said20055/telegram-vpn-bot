@@ -1,0 +1,160 @@
+:root {
+    --primary-color: #ff6600; /* Яркий оранжевый */
+    --primary-hover: #e65c00;
+    --dark-bg: #121212;       /* Глубокий черный */
+    --card-bg: #1e1e1e;       /* Чуть светлее для карточек */
+    --text-white: #ffffff;
+    --text-gray: #b0b0b0;
+    --radius: 12px;
+}
+
+body {
+    background-color: var(--dark-bg);
+    color: var(--text-white);
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* --- Навигация --- */
+.navbar {
+    background-color: rgba(18, 18, 18, 0.95) !important;
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.navbar-brand img {
+    height: 40px;
+    margin-right: 10px;
+    border-radius: 50%; /* Если лого круглое */
+}
+
+.nav-link {
+    color: var(--text-white) !important;
+    font-weight: 500;
+    transition: color 0.3s;
+}
+
+.nav-link:hover {
+    color: var(--primary-color) !important;
+}
+
+/* --- Кнопки --- */
+.btn-orange {
+    background: linear-gradient(45deg, #ff8c00, #ff4500);
+    border: none;
+    color: white;
+    font-weight: bold;
+    padding: 10px 24px;
+    border-radius: var(--radius);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.btn-orange:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(255, 102, 0, 0.4);
+    color: white;
+}
+
+.btn-outline-light {
+    border-radius: var(--radius);
+}
+
+/* --- Карточки (Стекломорфизм / Dark) --- */
+.card {
+    background-color: var(--card-bg);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius);
+    color: var(--text-white);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.form-control {
+    background-color: #2c2c2c;
+    border: 1px solid #444;
+    color: white;
+    border-radius: 8px;
+    padding: 12px;
+}
+
+.form-control:focus {
+    background-color: #333;
+    color: white;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 0.25rem rgba(255, 102, 0, 0.25);
+}
+
+/* --- Тарифы --- */
+.tariff-card {
+    transition: transform 0.3s;
+    height: 100%;
+}
+
+.tariff-card:hover {
+    transform: translateY(-5px);
+    border-color: var(--primary-color);
+}
+
+.tariff-price {
+    font-size: 2.5rem;
+    font-weight: bold;
+    color: var(--primary-color);
+}
+
+.tariff-badge {
+    background-color: var(--primary-color);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    position: absolute;
+    top: 15px;
+    right: 15px;
+}
+
+/* --- Footer --- */
+footer {
+    margin-top: auto;
+    background-color: var(--card-bg);
+    padding: 20px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-gray);
+}
+
+
+/* Эффект Liquid Glass (Стекломорфизм) */
+.glass-card {
+    background: rgba(30, 30, 30, 0.65); /* Полупрозрачный темный фон */
+    backdrop-filter: blur(12px);         /* Размытие фона под карточкой */
+    -webkit-backdrop-filter: blur(12px); /* Для Safari */
+    border: 1px solid rgba(255, 255, 255, 0.1); /* Тонкая рамка */
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5); /* Глубокая тень */
+    border-radius: 16px;
+}
+
+/* Убираем стандартный фон карточки внутри glass-контейнера */
+.glass-card .card-body {
+    background: transparent;
+}
+
+/* Адаптив для мобильных: на маленьких экранах убираем лишние отступы */
+@media (max-width: 576px) {
+    .glass-container {
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+}
+
+
+
+.logout-link {
+        color: #ff6b6b !important;
+        font-weight: 500;
+        transition: 0.2s;
+    }
+
+.logout-link:hover {
+        color: #ff4b4b !important;
+        text-decoration: underline;
+    }

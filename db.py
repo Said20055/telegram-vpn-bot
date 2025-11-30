@@ -41,6 +41,12 @@ class User(Base):
     referral_bonus_days: Mapped[int] = mapped_column(Integer, default=0)
     is_first_payment_made: Mapped[bool] = mapped_column(Boolean, default=False)
     support_topic_id: Mapped[int] = mapped_column(Integer, nullable=True)
+    
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=True)
+    
+    reset_code: Mapped[str] = mapped_column(String(10), nullable=True)
+    reset_code_expire: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=True)
 
 class Tariff(Base):
     __tablename__ = 'tariffs'

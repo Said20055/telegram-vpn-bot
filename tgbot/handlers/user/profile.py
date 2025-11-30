@@ -128,7 +128,7 @@ async def my_keys_handler(call: CallbackQuery, marzban: MarzClientCache):
 
     for i, link in enumerate(links):
         if i == 0:
-            button_text = "🇳🇱 VacVPN Амстердам"
+            button_text = " VacVPN Германия"
         else:
             server_address, _ = _parse_link(link)
             node_name = address_to_name.get(server_address, "Неизвестный узел")

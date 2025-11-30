@@ -68,6 +68,7 @@ async def get_marzban_user_info(event: types.Message | types.CallbackQuery, marz
             back_to_main_menu_keyboard()
         )
         return user, None
+    
 
     try:
         marzban_user = await marzban.get_user(user.marzban_username)

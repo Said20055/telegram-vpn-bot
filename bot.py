@@ -68,7 +68,6 @@ async def register_commands(bot: Bot):
     user_commands = [
         BotCommand(command='start', description='🏠 Главное меню'),
         BotCommand(command='profile', description='👤 Мой профиль'),
-        BotCommand(command='payment', description='💳 Оплата'),
         BotCommand(command='support', description='💬 Поддержка'),
         BotCommand(command='referral', description='🤝 Реф. программа'),
         BotCommand(command='instruction', description='📲 Инструкция'),

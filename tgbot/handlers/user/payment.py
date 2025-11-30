@@ -8,7 +8,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.filters import Command
 
-from loader import logger
+from loader import logger, config
 from database import requests as db
 from marzban.init_client import MarzClientCache
 from tgbot.handlers.user.profile import show_profile_logic
@@ -238,8 +238,10 @@ async def select_tariff_handler(call: CallbackQuery, state: FSMContext, bot: Bot
         user_id=call.from_user.id,
         amount=final_price,
         description=f"Оплата тарифа '{tariff.name}'" + (f" (скидка {discount_percent}%)" if discount_percent else ""),
-        bot_username=(await bot.get_me()).username,
-        metadata={'user_id': str(call.from_user.id), 'tariff_id': tariff_id}
+        return_url= f"https://t.me/{(await bot.get_me()).username}",
+        metadata={'user_id': str(call.from_user.id), 'tariff_id': tariff_id},
+        shop_id= config.yookassa.shop_id,
+        secret_key= config.yookassa.secret_key
     )
 
     payment_kb = InlineKeyboardBuilder()

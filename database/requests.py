@@ -93,14 +93,21 @@ async def set_first_payment_done(user_id: int):
         await session.commit()
 
 async def delete_user(user_id: int) -> bool:
-    """Асинхронно удаляет пользователя."""
+    """Асинхронно удаляет пользователя вместе с зависимыми записями."""
     async with async_session_maker() as session:
         user = await session.get(User, user_id)
-        if user:
-            await session.delete(user)
-            await session.commit()
-            return True
-        return False
+        if not user:
+            return False
+
+        # Удаляем связанные записи из used_promo_codes
+        await session.execute(
+            delete(UsedPromoCode).where(UsedPromoCode.user_id == user_id)
+        )
+
+        # Удаляем самого пользователя
+        await session.delete(user)
+        await session.commit()
+        return True
 
 async def get_users_with_expiring_subscription(days_left: int) -> list[User]:
     """Асинхронно получает пользователей с подпиской, истекающей через X дней."""

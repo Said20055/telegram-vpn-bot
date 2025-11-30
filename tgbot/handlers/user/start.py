@@ -66,7 +66,7 @@ async def process_start_command(message: Message, command: CommandObject, bot: B
 async def activate_referral_bonus(message: Message, referrer_id: int, marzban: MarzClientCache, bot: Bot):
     """Вспомогательная функция для активации реферального бонуса."""
     user_id = message.from_user.id
-    bonus_days = 30
+    bonus_days = 7
     marzban_username = f"user_{user_id}"
     try:
         await marzban.add_user(username=marzban_username, expire_days=bonus_days)
@@ -77,7 +77,7 @@ async def activate_referral_bonus(message: Message, referrer_id: int, marzban: M
         await db.update_user_marzban_username(user_id, marzban_username)
         await db.extend_user_subscription(user_id, days=bonus_days)
         
-        await message.answer(f"🎉 Вы пришли по приглашению и получили <b>пробную подписку на {bonus_days} дня</b>!")
+        await message.answer(f"🎉 Вы пришли по приглашению и получили <b>пробную подписку на {bonus_days} дней</b>!")
         
         # Уведомляем реферера
         try:

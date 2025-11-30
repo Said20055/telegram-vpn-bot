@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ru" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} | VacVPN</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Иконки -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- Наши стили -->
+    <link href="/static/css/styles.css" rel="stylesheet">
+</head>
+<body>
+
+    <!-- Навигация -->
+    <nav class="navbar navbar-expand-lg navbar-dark fixed-top">
+        <div class="container">
+            <a class="navbar-brand d-flex align-items-center" href="/">
+                <img src="/static/img/logo.png" alt="" onerror="this.style.display='none'">
+                <span class="fw-bold ms-2">VacVPN</span>
+            </a>
+
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto align-items-center">
+
+                    {% if user %}
+                    <li class="nav-item me-2">
+                        <a href="/profile/" class="nav-link">Личный кабинет</a>
+                    </li>
+
+                    <li class="nav-item">
+                        <a href="/logout" class="nav-link logout-link">
+                            <i class="fas fa-sign-out-alt me-1"></i> Выйти
+                        </a>
+                    </li>
+
+                    {% else %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="/login">Вход</a>
+                    </li>
+                    <li class="nav-item ms-2">
+                        <a class="btn btn-orange btn-sm" href="/register">Регистрация</a>
+                    </li>
+                    {% endif %}
+
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Основной контент -->
+    <!-- ДОБАВЛЯЕМ flex-grow-1, чтобы этот блок занимал все место и толкал футер вниз -->
+    <div class="flex-grow-1" style="margin-top: 80px;">
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- Футер (теперь он всегда будет внизу) -->
+    <footer class="text-center mt-auto py-4">
+        <div class="container">
+            <p class="mb-0 text-muted">&copy; 2025 VacVPN. Свобода без границ.</p>
+        </div>
+    </footer>
+    
+    <!-- Скрипты (оставляем) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/js/scripts.js"></script>
+</body>
