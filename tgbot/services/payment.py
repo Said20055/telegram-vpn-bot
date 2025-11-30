@@ -3,6 +3,9 @@ import uuid
 from yookassa import Configuration, Payment
 from yookassa.domain.notification import WebhookNotification
 
+import uuid
+from yookassa import Configuration, Payment
+
 def create_payment(
     amount: float,
     description: str,
@@ -14,7 +17,7 @@ def create_payment(
     secret_key: str = None   # Передаем явно
 ):
     """
-    Универсальная функция создания платежа.
+    Универсальная функция создания платежа в YooKassa со всеми полями JSON.
     """
     # Настраиваем SDK перед запросом
     if shop_id and secret_key:
@@ -22,30 +25,39 @@ def create_payment(
         Configuration.secret_key = secret_key
 
     idempotence_key = str(uuid.uuid4())
-    
-    # Если email не передан, генерируем заглушку (для бота)
-    # Для сайта мы будем передавать реальный email
+
+    # Email для чека (обязательно хотя бы один контакт)
     receipt_email = user_email if user_email else f"user_{abs(user_id)}@telegram.user"
 
+    # Данные для чека (receipt)
     receipt_data = {
         "customer": {"email": receipt_email},
-        "items": [{
-            "description": description,
-            "quantity": "1.00",
-            "amount": {"value": f"{amount:.2f}", "currency": "RUB"},
-            "vat_code": "1",
-            "payment_mode": "full_prepayment",
-            "payment_subject": "service"
-        }]
+        "items": [
+            {
+                "description": description,
+                "quantity": "1.00",
+                "amount": {
+                    "value": f"{amount:.2f}",  # Цена за единицу с двумя знаками после запятой
+                    "currency": "RUB"
+                },
+                "vat_code": "1",              # НДС не облагается
+                "payment_mode": "full_prepayment",
+                "payment_subject": "service"
+            }
+        ]
     }
 
-    # Базовые метаданные + то, что передали сверху
+    # Метаданные платежа
     final_metadata = {'user_id': str(user_id)}
     if metadata:
         final_metadata.update(metadata)
 
+    # Создаем платеж
     payment_obj = Payment.create({
-        "amount": {"value": str(amount), "currency": "RUB"},
+        "amount": {
+            "value": str(amount),   # Сумма платежа
+            "currency": "RUB"
+        },
         "confirmation": {
             "type": "redirect",
             "return_url": return_url
@@ -56,6 +68,7 @@ def create_payment(
         "receipt": receipt_data
     }, idempotence_key)
 
+    # Возвращаем ссылку на оплату и ID платежа
     return payment_obj.confirmation.confirmation_url, payment_obj.id
 
 def parse_webhook_notification(request_body: dict):

@@ -8,6 +8,8 @@ from fastapi import FastAPI, Request, Depends
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware 
+from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 
 from db import User
 from webapp.routers import auth, dashboard, payment
@@ -16,6 +18,7 @@ from loader import logger, marzban_client
 from typing import Optional
 from db import Tariff
 from database.requests import get_active_tariffs
+
 
 
 @asynccontextmanager
@@ -30,6 +33,7 @@ async def lifespan(app: FastAPI):
         logger.info("💤 Marzban Client closed")
 
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["*"])
 
 # --- Статика (создаем папку, если нет) ---
 static_dir = "webapp/static"
