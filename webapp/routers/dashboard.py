@@ -122,7 +122,7 @@ async def activate_trial(
         })
 
     marz_username = f"web_{abs(user.user_id)}"
-    trial_days = 3 # Твой срок триала
+    trial_days = 7 # Твой срок триала
     
     try:
         logger.info(f"Создание триала для {user.email} -> {marz_username}")
