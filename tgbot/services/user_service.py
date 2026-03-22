@@ -18,10 +18,13 @@ class UserService:
         return await self._user_repo.get(user_id)
 
     async def find_user(self, query: str):
-        """Ищет пользователя по ID или username."""
-        if query.isdigit():
-            return await self._user_repo.get(int(query))
-        return await self._user_repo.get_by_username(query.replace("@", ""))
+        """Ищет пользователя по ID (положительный или отрицательный), email или username."""
+        stripped = query.strip()
+        if stripped.lstrip("-").isdigit() and stripped != "-":
+            return await self._user_repo.get(int(stripped))
+        if "@" in stripped and "." in stripped:
+            return await self._user_repo.get_by_email(stripped.lower())
+        return await self._user_repo.get_by_username(stripped.replace("@", ""))
 
     async def delete_user(self, user_id: int, marzban: MarzClientCache) -> bool:
         """Удаляет пользователя из Marzban и БД."""

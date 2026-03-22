@@ -67,7 +67,7 @@ async def users_menu(call: CallbackQuery, state: FSMContext):
     await state.clear()
     await call.message.edit_text(
         "<b>👤 Управление пользователями</b>\n\n"
-        "Введите ID или username (без @) пользователя для поиска:",
+        "Введите ID (например: <code>123456</code> или <code>-123456</code>), @username или email:",
         reply_markup=back_to_admin_main_menu_keyboard()
     )
     await state.set_state(AdminFSM.find_user)
