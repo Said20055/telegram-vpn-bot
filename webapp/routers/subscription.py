@@ -56,13 +56,22 @@ async def subscription_proxy(marzban_username: str):
     return PlainTextResponse(encoded, media_type="text/plain; charset=utf-8")
 
 
+_VPN_PREFIXES = ("vless://", "vmess://", "trojan://", "ss://", "hysteria2://", "hy2://", "tuic://")
+
+
 def _decode_links(content: str) -> list[str]:
-    """Декодирует base64-подписку в список ссылок."""
+    """Декодирует подписку в список ссылок.
+
+    Сначала проверяет plain-text (b64decode молча декодирует любую строку без исключения),
+    затем пробует base64.
+    """
+    lines = [line.strip() for line in content.splitlines() if line.strip()]
+    if any(line.startswith(_VPN_PREFIXES) for line in lines):
+        return lines
     try:
         decoded = base64.b64decode(content + "==").decode("utf-8", errors="ignore")
         return [line.strip() for line in decoded.splitlines() if line.strip()]
     except Exception:
-        # Если уже plain-текст (некоторые провайдеры отдают без base64)
-        return [line.strip() for line in content.splitlines() if line.strip()]
+        return lines
 
 
