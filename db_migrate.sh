@@ -49,14 +49,17 @@ fi
 
 echo "✅ Контейнер vpn_postgres найден"
 
-# ── Шаг 1: Дамп с удалённого сервера (pg_dump из контейнера) ─────────────────
+# ── Шаг 1: Дамп с удалённого сервера (через временный postgres:17 контейнер) ──
 echo ""
 echo "1️⃣  Дампирую удалённую БД ($REMOTE_HOST)..."
+echo "    Используем postgres:17 клиент (удалённый сервер — PG17)..."
 echo "    Это может занять время..."
 
 DUMP_FILE="/tmp/db_migration_$(date +%Y%m%d_%H%M%S).sql"
 
-docker exec -e PGPASSWORD="$REMOTE_PASS" vpn_postgres \
+docker run --rm \
+  -e PGPASSWORD="$REMOTE_PASS" \
+  postgres:17-alpine \
   pg_dump \
     -h "$REMOTE_HOST" \
     -p "$REMOTE_PORT" \
