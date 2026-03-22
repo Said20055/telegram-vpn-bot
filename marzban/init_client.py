@@ -10,6 +10,10 @@ from marzban_api_client.models.body_admin_token_api_admin_token_post import (
 )
 from marzban_api_client.client import Client
 
+DATA_LIMIT_BYTES = 1_000 * 1024 ** 3  # 1000 ГБ в байтах
+DATA_LIMIT_RESET_STRATEGY = "month"   # сброс лимита каждый месяц
+
+
 class MarzClientCache:
     def __init__(self, base_url: str, config, logger):
         self._http_client: Optional[httpx.AsyncClient] = None
@@ -77,26 +81,61 @@ class MarzClientCache:
         except Exception as e:
             self._logger.error(f"Failed to get nodes from Marzban: {e}")
             return []
+    async def get_inbounds(self) -> Dict[str, list]:
+        """Получает доступные inbounds из Marzban."""
+        client = await self.get_http_client()
+        try:
+            response = await client.get("/api/inbounds")
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self._logger.error(f"Failed to get inbounds from Marzban: {e}")
+            return {}
+
     async def add_user(self, username: str, expire_days: int) -> Dict[str, Any]:
-        """Создает нового пользователя в Marzban."""
+        """Создает нового пользователя в Marzban, автоматически определяя доступные inbounds."""
         client = await self.get_http_client()
         expire_timestamp = int((datetime.now() + timedelta(days=expire_days)).timestamp())
+
+        # Запрашиваем доступные inbounds у Marzban
+        inbounds = await self.get_inbounds()
+        self._logger.info(f"Available Marzban inbounds: {inbounds}")
+
+        # Строим proxies и inbounds на основе доступных
+        proxies = {}
+        inbounds_map = {}
+        for protocol, items in inbounds.items():
+            if items:
+                # items может быть списком объектов [{tag, protocol, ...}] или строк
+                tags = []
+                for item in items:
+                    if isinstance(item, dict):
+                        tags.append(item["tag"])
+                    else:
+                        tags.append(item)
+                inbounds_map[protocol] = tags
+                if protocol == "vless":
+                    proxies[protocol] = {"flow": "xtls-rprx-vision"}
+                else:
+                    proxies[protocol] = {}
+
+        if not proxies:
+            raise ValueError(f"No inbounds available in Marzban. Configure at least one inbound in Marzban dashboard.")
 
         json_body = {
             "username": username.lower(),
             "expire": expire_timestamp,
-            "proxies": {
-                "vless": {
-                    "flow": "xtls-rprx-vision" # <--- ДОБАВЬТЕ ЭТУ СТРОКУ
-                }
-            },
-            "inbounds": {
-                "vless": ["VLESS-Reality"]
-            }
+            "data_limit": DATA_LIMIT_BYTES,
+            "data_limit_reset_strategy": DATA_LIMIT_RESET_STRATEGY,
+            "proxies": proxies,
+            "inbounds": inbounds_map,
         }
 
+        self._logger.info(f"Creating Marzban user '{username}' with inbounds: {inbounds_map}")
         response = await client.post("/api/user", json=json_body)
-        response.raise_for_status()  # Вызовет исключение для кодов 4xx/5xx
+        if response.status_code != 200:
+            self._logger.error(f"Marzban add_user failed: {response.status_code} {response.text}")
+            response.raise_for_status()
         return response.json()
 
     async def get_user(self, username: str) -> Optional[Dict[str, Any]]:
@@ -143,7 +182,11 @@ class MarzClientCache:
                 new_expire_date = datetime.now() + timedelta(days=expire_days)
             
             # Формируем тело запроса для изменения
-            json_body = {"expire": int(new_expire_date.timestamp())}
+            json_body = {
+                "expire": int(new_expire_date.timestamp()),
+                "data_limit": DATA_LIMIT_BYTES,
+                "data_limit_reset_strategy": DATA_LIMIT_RESET_STRATEGY,
+            }
             
             # Отправляем PUT запрос на изменение
             client = await self.get_http_client()
@@ -159,8 +202,58 @@ class MarzClientCache:
             # Это избавляет от дублирования кода.
             return await self.add_user(username=username, expire_days=expire_days)
 
-    # --- НОВЫЙ МЕТОД ---
-        
+    async def get_users(self, offset: int = 0, limit: int = 1000) -> Dict[str, Any]:
+        """Получает список всех пользователей из Marzban."""
+        client = await self.get_http_client()
+        try:
+            response = await client.get("/api/users", params={"offset": offset, "limit": limit})
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self._logger.error(f"Failed to get users list from Marzban: {e}")
+            return {"users": [], "total": 0}
+
+    async def set_data_limit(self, username: str, limit_bytes: int = DATA_LIMIT_BYTES) -> bool:
+        """Устанавливает лимит трафика для существующего пользователя."""
+        client = await self.get_http_client()
+        try:
+            response = await client.put(
+                f"/api/user/{username.lower()}",
+                json={
+                    "data_limit": limit_bytes,
+                    "data_limit_reset_strategy": DATA_LIMIT_RESET_STRATEGY,
+                },
+            )
+            response.raise_for_status()
+            self._logger.info(f"Set data_limit={limit_bytes} for user '{username}'.")
+            return True
+        except Exception as e:
+            self._logger.error(f"Failed to set data_limit for user '{username}': {e}")
+            return False
+
+    async def apply_data_limit_to_all(self, limit_bytes: int = DATA_LIMIT_BYTES) -> Dict[str, int]:
+        """
+        Устанавливает лимит трафика всем пользователям, у которых он не задан (data_limit == 0 или None).
+        Возвращает {'updated': N, 'skipped': M, 'failed': K}.
+        """
+        result = {"updated": 0, "skipped": 0, "failed": 0}
+        data = await self.get_users(limit=4096)
+        users = data.get("users", [])
+        self._logger.info(f"apply_data_limit_to_all: found {len(users)} users in Marzban.")
+        for user in users:
+            username = user.get("username", "")
+            current_limit = user.get("data_limit") or 0
+            if current_limit == 0:
+                ok = await self.set_data_limit(username, limit_bytes)
+                if ok:
+                    result["updated"] += 1
+                else:
+                    result["failed"] += 1
+            else:
+                result["skipped"] += 1
+        self._logger.info(f"apply_data_limit_to_all done: {result}")
+        return result
+
     async def delete_user(self, username: str) -> bool:
         """Удаляет пользователя из Marzban."""
         client = await self.get_http_client()

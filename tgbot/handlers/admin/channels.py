@@ -1,34 +1,33 @@
 # tgbot/handlers/admin/channels.py
 from aiogram import Router, F, Bot, types
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
+from tgbot.states.channel_states import AdminChannelsFSM
 from aiogram.types import Message, CallbackQuery
 
 from tgbot.filters.admin import IsAdmin
-from database import requests as db
+from database import channel_repo
 
 admin_channels_router = Router()
 admin_channels_router.message.filter(IsAdmin())
 admin_channels_router.callback_query.filter(IsAdmin())
 
-class AdminChannelsFSM(StatesGroup):
-    add_channel_id = State()
-    delete_channel_id = State()
 
 # --- Главное меню управления каналами ---
 @admin_channels_router.callback_query(F.data == "admin_channels_menu")
-async def channels_menu(call: CallbackQuery):
-    channels = await db.get_all_channels()
+async def channels_menu(event: CallbackQuery | Message):
+    channels = await channel_repo.get_all()
     text = "<b>📢 Управление обязательной подпиской</b>\n\nТекущие каналы:\n"
     if not channels:
         text += "<i>Список пуст.</i>"
     else:
         for ch in channels:
             text += f"• <code>{ch.channel_id}</code> - <a href='{ch.invite_link}'>{ch.title}</a>\n"
-    
-    # --- Создайте эту клавиатуру в keyboards/inline.py ---
+
     from tgbot.keyboards.inline import manage_channels_keyboard
-    await call.message.edit_text(text, reply_markup=manage_channels_keyboard(), disable_web_page_preview=True)
+    if isinstance(event, CallbackQuery):
+        await event.message.edit_text(text, reply_markup=manage_channels_keyboard(), disable_web_page_preview=True)
+    else:
+        await event.answer(text, reply_markup=manage_channels_keyboard(), disable_web_page_preview=True)
 
 # --- Добавление канала ---
 @admin_channels_router.callback_query(F.data == "admin_add_channel")
@@ -46,8 +45,8 @@ async def add_channel_finish(message: Message, state: FSMContext, bot: Bot):
     try:
         # Пытаемся создать приватную ссылку на канал
         invite_link = await bot.create_chat_invite_link(chat.id)
-        
-        await db.add_channel(
+
+        await channel_repo.add(
             channel_id=chat.id,
             title=chat.title,
             invite_link=invite_link.invite_link
@@ -56,7 +55,7 @@ async def add_channel_finish(message: Message, state: FSMContext, bot: Bot):
     except Exception as e:
         await message.answer(f"❌ Ошибка при добавлении канала: {e}\n\n"
                              "Убедитесь, что бот является администратором канала с правом создания пригласительных ссылок.")
-    
+
     await state.clear()
     # Возвращаемся в меню
     await channels_menu(message) # Нужна адаптация под message
@@ -71,7 +70,7 @@ async def delete_channel_start(call: CallbackQuery, state: FSMContext):
 async def delete_channel_finish(message: Message, state: FSMContext):
     try:
         channel_id = int(message.text)
-        success = await db.delete_channel(channel_id)
+        success = await channel_repo.delete(channel_id)
         if success:
             await message.answer(f"✅ Канал <code>{channel_id}</code> удален.")
         else:

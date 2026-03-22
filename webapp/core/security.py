@@ -1,11 +1,12 @@
 # webapp/core/security.py
+import os
 from datetime import datetime, timedelta
 from typing import Optional
 from passlib.context import CryptContext
 from jose import jwt
 
 # Настройки
-SECRET_KEY = "CHANGE_THIS_TO_A_SUPER_SECRET_STRING" 
+SECRET_KEY = os.getenv("SECRET_KEY", "CHANGE_THIS_TO_A_SUPER_SECRET_STRING")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 дней
 

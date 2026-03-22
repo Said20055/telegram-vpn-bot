@@ -1,13 +1,12 @@
-import time
 from aiogram import Router, F, Bot, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from loader import logger, config
-from database import requests as db
+from tgbot.services import support_service
+from database import user_repo
 from tgbot.keyboards.inline import close_support_chat_keyboard, main_menu_keyboard
 from tgbot.states.support_states import SupportFSM
 
@@ -62,9 +61,10 @@ async def start_support_chat_confirmed(call: types.CallbackQuery, state: FSMCont
     """Создает тему и переводит пользователя в режим чата после подтверждения."""
     await state.clear()
     user_id = call.from_user.id
-    user = await db.get_user(user_id)
 
-    if user and user.support_topic_id:
+    topic_id = await support_service.get_topic_id(user_id)
+
+    if topic_id:
         text = "Вы уже находитесь в чате с поддержкой. Просто продолжайте писать сообщения ниже."
     else:
         try:
@@ -72,7 +72,7 @@ async def start_support_chat_confirmed(call: types.CallbackQuery, state: FSMCont
                 chat_id=config.tg_bot.support_chat_id,
                 name=f"Тикет #{user_id} | @{call.from_user.username or 'NoUsername'}"
             )
-            await db.set_user_support_topic(user_id, topic.message_thread_id)
+            await support_service.save_topic(user_id, topic.message_thread_id)
             await bot.send_message(
                 chat_id=config.tg_bot.support_chat_id,
                 message_thread_id=topic.message_thread_id,
@@ -85,7 +85,7 @@ async def start_support_chat_confirmed(call: types.CallbackQuery, state: FSMCont
             return
 
     await state.set_state(SupportFSM.in_chat)
-    
+
     await call.message.edit_text(text, reply_markup=close_support_chat_keyboard())
     await call.answer()
 
@@ -94,16 +94,16 @@ async def start_support_chat_confirmed(call: types.CallbackQuery, state: FSMCont
 async def close_support_chat_by_user(call: types.CallbackQuery, state: FSMContext, bot: Bot):
     """Обрабатывает закрытие диалога со стороны пользователя."""
     await state.clear()
-    user = await db.get_user(call.from_user.id)
-    if user and user.support_topic_id:
+    topic_id = await support_service.get_topic_id(call.from_user.id)
+    if topic_id:
         await bot.send_message(
             chat_id=config.tg_bot.support_chat_id,
-            message_thread_id=user.support_topic_id,
+            message_thread_id=topic_id,
             text="💬 Пользователь завершил диалог."
         )
-    await db.clear_user_support_topic(call.from_user.id)
+    await support_service.close_topic(call.from_user.id)
     await call.message.edit_text(
-        "✅ <b>Диалог с поддержкой завершен.</b>\n\nВы вернулись в главное меню.", 
+        "✅ <b>Диалог с поддержкой завершен.</b>\n\nВы вернулись в главное меню.",
         reply_markup=main_menu_keyboard()
     )
 
@@ -124,7 +124,7 @@ async def process_message_in_support_chat(message: Message, state: FSMContext, b
     Если это команда - выходит из чата.
     Если это обычное сообщение - пересылает в поддержку.
     """
-    
+
     # 1. Проверяем, является ли сообщение командой
     if message.text and message.text.startswith('/'):
         # Если это команда, выходим из режима поддержки
@@ -138,8 +138,8 @@ async def process_message_in_support_chat(message: Message, state: FSMContext, b
         return # Завершаем выполнение хендлера
 
     # 2. Если это не команда, обрабатываем как обычное сообщение для поддержки
-    user = await db.get_user(message.from_user.id)
-    if not user or not user.support_topic_id:
+    topic_id = await support_service.get_topic_id(message.from_user.id)
+    if not topic_id:
         await state.clear()
         await message.answer("Произошла ошибка. Пожалуйста, начните чат с поддержкой заново.", reply_markup=main_menu_keyboard())
         return
@@ -147,7 +147,7 @@ async def process_message_in_support_chat(message: Message, state: FSMContext, b
     # Пересылаем сообщение админу
     await message.forward(
         chat_id=config.tg_bot.support_chat_id,
-        message_thread_id=user.support_topic_id
+        message_thread_id=topic_id
     )
 
 
@@ -158,22 +158,22 @@ async def process_message_in_support_chat(message: Message, state: FSMContext, b
 @support_router.message(F.chat.id == config.tg_bot.support_chat_id, F.message_thread_id, Command("close"))
 async def admin_close_topic_command(message: types.Message, bot: Bot):
     """Закрывает тикет по команде /close от админа."""
-    user_to_reply = await db.get_user_by_support_topic(message.message_thread_id)
+    user_to_reply = await support_service.get_user_by_topic(message.message_thread_id)
     if not user_to_reply:
         await message.reply("Не удалось найти пользователя для этой темы.")
         return
 
     try:
         await bot.send_message(
-            user_to_reply.user_id, 
+            user_to_reply.user_id,
             "Оператор поддержки завершил ваш диалог. Если у вас возникнут новые вопросы, вы всегда можете открыть новый тикет.\n"
             "Вы были возвращены в главное меню!",
             reply_markup=main_menu_keyboard()
         )
     except Exception as e:
         logger.warning(f"Could not send '/close' notification to user {user_to_reply.user_id}: {e}")
-    
-    await db.clear_user_support_topic(user_to_reply.user_id)
+
+    await support_service.close_topic(user_to_reply.user_id)
     await bot.close_forum_topic(config.tg_bot.support_chat_id, message.message_thread_id)
     await message.reply("✅ Тикет успешно закрыт.")
 
@@ -187,14 +187,14 @@ async def admin_reply_to_user_from_topic(message: types.Message, bot: Bot):
     if message.from_user.id == bot.id:
         return
 
-    user_to_reply = await db.get_user_by_support_topic(message.message_thread_id)
+    user_to_reply = await support_service.get_user_by_topic(message.message_thread_id)
     if not user_to_reply:
         return
 
     try:
         # Формируем нашу "шапку" для сообщения
         header = "💬 <b>Ответ от поддержки:</b>\n"
-        
+
         # 1. Если админ отправил только текст
         if message.text:
             # Просто соединяем нашу шапку и текст админа
@@ -203,17 +203,15 @@ async def admin_reply_to_user_from_topic(message: types.Message, bot: Bot):
                 text=header + message.text,
                 reply_markup=message.reply_markup # Копируем кнопки, если они были
             )
-            
+
         # 2. Если админ отправил фото, видео, документ и т.д. с подписью (caption)
         elif message.caption:
             # Копируем сообщение, но изменяем его подпись, добавляя нашу шапку
             await message.copy_to(
                 chat_id=user_to_reply.user_id,
                 caption=header + message.caption,
-                # caption_entities нужно очистить, т.к. мы меняем текст.
-                # Aiogram сам создаст новые entities для нашего HTML
             )
-            
+
         # 3. Если админ отправил медиа БЕЗ подписи
         else:
             # Сначала отправляем нашу "шапку" отдельным сообщением

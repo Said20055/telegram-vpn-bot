@@ -1,12 +1,12 @@
 services:
   nginx:
-    container_name: free_vpn_bot_nginx
+    container_name: vpn_nginx
     image: nginx:1.25-alpine
     ports:
       - "80:80"
       - "8443:443"
     networks:
-      - free_vpn_bot
+      - vpn_network
     restart: always
     environment:
       DOMAIN: ${DOMAIN}
@@ -25,22 +25,46 @@ services:
       - marzban
       - vpn_bot
 
+  postgres:
+    container_name: vpn_postgres
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - vpn_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   vpn_site:
-    image: free_vpn_bot # Используем тот же образ, что и бот!
-    container_name: free_vpn_site
+    image: vpn_bot
+    container_name: vpn_site
     command: uvicorn webapp.main:app --host 0.0.0.0 --port 8000
     restart: always
     env_file:
       - ".env"
     ports:
-      - "8000:8000" # Пробрасываем порт сайта
+      - "8000:8000"
     depends_on:
-      - marzban
+      postgres:
+        condition: service_healthy
+      marzban:
+        condition: service_started
     networks:
-      - free_vpn_bot
+      - vpn_network
+
   marzban:
     image: gozargah/marzban:v0.8.4
-    container_name: free_vpn_bot_marzban
+    container_name: vpn_marzban
     restart: always
     dns:
       - 1.1.1.1
@@ -54,7 +78,7 @@ services:
       - "127.0.0.1:8002:8002"
       - "443:443"
     networks:
-      - free_vpn_bot
+      - vpn_network
     volumes:
       - marz-storage:/code
       - ./volumes/marzban:/var/lib/marzban
@@ -69,11 +93,10 @@ services:
       options:
         max-size: "900k"
         max-file: "10"
+
   vpn_bot:
-    image: free_vpn_bot
-    ports:
-      - "8081:8081"
-    container_name: free_vpn_bot
+    image: vpn_bot
+    container_name: vpn_bot
     stop_signal: SIGINT
     build:
       context: .
@@ -82,16 +105,24 @@ services:
       - .:/usr/src/app
     command: python3 -m bot
     restart: always
+    ports:
+      - "8081:8081"
     env_file:
       - ".env"
     networks:
-      - free_vpn_bot
+      - vpn_network
     depends_on:
-      - marzban
+      postgres:
+        condition: service_healthy
+      marzban:
+        condition: service_started
+
 networks:
-  free_vpn_bot:
+  vpn_network:
     driver: bridge
 
 volumes:
   marz-storage:
+    driver: local
+  postgres-data:
     driver: local

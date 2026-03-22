@@ -1,20 +1,16 @@
 # tgbot/handlers/user/profile.py
-import asyncio
 from aiogram import Router, F, types, Bot
-from aiogram.types import Message, CallbackQuery, BufferedInputFile
+from aiogram.types import Message, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest
-from aiohttp.client_exceptions import ClientConnectionError
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.filters import Command
-from urllib.parse import urlparse
 from datetime import datetime
 
 from loader import logger
 from marzban.init_client import MarzClientCache
-from tgbot.keyboards.inline import profile_keyboard, back_to_main_menu_keyboard, single_key_view_keyboard
-from tgbot.services import qr_generator
-from tgbot.services.utils import _parse_link, format_traffic, get_marzban_user_info, get_user_attribute
-from urllib.parse import quote_plus
+from tgbot.keyboards.inline import profile_keyboard, back_to_main_menu_keyboard, keys_screen_keyboard
+from tgbot.services import qr_generator, profile_service, payment_service
+from tgbot.services.utils import format_traffic, get_user_attribute
+from utils.url import build_import_url
 
 profile_router = Router()
 
@@ -25,15 +21,27 @@ async def show_profile_logic(event: Message | CallbackQuery, marzban: MarzClient
     Универсальная логика для отображения профиля пользователя.
     Адаптирована для вызова из webhook_handler.
     """
-    
+
     # Получаем ID пользователя и объект бота из события
     user_id = event.from_user.id
 
-    
-    # Получаем информацию о пользователе
-    db_user, marzban_user = await get_marzban_user_info(event, marzban)
-    if not marzban_user:
+
+    # Получаем информацию о пользователе через сервис
+    profile_data = await profile_service.get_profile(user_id)
+    if profile_data.error:
+        text = profile_data.error
+        reply_markup = back_to_main_menu_keyboard()
+        if isinstance(event, types.CallbackQuery):
+            try:
+                await event.message.edit_text(text, reply_markup=reply_markup)
+            except TelegramBadRequest:
+                await event.message.delete()
+                await event.message.answer(text, reply_markup=reply_markup)
+        else:
+            await event.answer(text, reply_markup=reply_markup)
         return
+
+    marzban_user = profile_data.marzban_user
 
     # --- Форматирование данных (ваш код) ---
     status = get_user_attribute(marzban_user, 'status', 'unknown')
@@ -64,7 +72,7 @@ async def show_profile_logic(event: Message | CallbackQuery, marzban: MarzClient
         qr_photo = types.BufferedInputFile(qr_code_stream.getvalue(), filename="qr.png")
 
         # --- ИСПРАВЛЕННАЯ ЛОГИКА ОТПРАВКИ ---
-        
+
         # Если это было нажатие на кнопку, пытаемся удалить старое сообщение
         if isinstance(event, types.CallbackQuery):
             try:
@@ -83,7 +91,7 @@ async def show_profile_logic(event: Message | CallbackQuery, marzban: MarzClient
     except Exception as e:
         logger.error(f"Error sending profile with QR: {e}", exc_info=True)
         # Если что-то пошло не так, отправляем просто текст
-        
+
         # --- ИСПРАВЛЕННАЯ ЛОГИКА ОТПРАВКИ ---
         await bot.send_message(
             chat_id=user_id,
@@ -102,72 +110,87 @@ async def my_profile_callback_handler(call: CallbackQuery, marzban: MarzClientCa
     await call.answer("Загружаю информацию...")
     await show_profile_logic(call, marzban, bot)
 
-# --- Хендлер для "Мои ключи" (остается почти без изменений) ---
+# --- Хендлер для "Мои ключи" — упрощённый экран с импортом ---
 @profile_router.callback_query(F.data == "my_keys")
-async def my_keys_handler(call: CallbackQuery, marzban: MarzClientCache):
-    """Меню с кнопками для каждого ключа (с хардкодом первого ключа)."""
-    await call.answer("Загружаю список ключей...")
+async def my_keys_handler(call: CallbackQuery):
+    """Показывает subscription URL и кнопку импорта в Happ."""
+    await call.answer("Загружаю данные...")
 
-    db_user, marzban_user = await get_marzban_user_info(call, marzban)
-    if not marzban_user:
+    profile_data = await profile_service.get_profile(call.from_user.id)
+    if profile_data.error or not profile_data.marzban_user:
+        error_text = profile_data.error or "Не удалось получить данные подписки."
+        try:
+            await call.message.edit_text(error_text, reply_markup=back_to_main_menu_keyboard())
+        except TelegramBadRequest:
+            await call.message.delete()
+            await call.message.answer(error_text, reply_markup=back_to_main_menu_keyboard())
         return
 
-    links = get_user_attribute(marzban_user, "links", [])
-    if not links:
-        await call.message.answer("❌ У вас пока нет ключей.")
+    marzban_user = profile_data.marzban_user
+    sub_url = get_user_attribute(marzban_user, 'subscription_url', '')
+    domain = profile_service._marzban._config.webhook.domain
+    full_sub_url = f"https://{domain}:8443{sub_url}" if sub_url else ""
+
+    if not full_sub_url:
+        error_text = "❌ Ссылка для подключения недоступна. Обратитесь в поддержку."
+        try:
+            await call.message.edit_text(error_text, reply_markup=back_to_main_menu_keyboard())
+        except TelegramBadRequest:
+            await call.message.delete()
+            await call.message.answer(error_text, reply_markup=back_to_main_menu_keyboard())
         return
 
-    # Получаем список нод
-    nodes = await marzban.get_nodes()
-    address_to_name = {node["address"]: node["name"] for node in nodes}
-    main_domain = marzban._config.webhook.domain
-    address_to_name.setdefault(main_domain, "Основной сервер")
-
-    # Создаём клавиатуру
-    kb = InlineKeyboardBuilder()
-
-    for i, link in enumerate(links):
-        if i == 0:
-            button_text = " VacVPN Германия"
-        else:
-            server_address, _ = _parse_link(link)
-            node_name = address_to_name.get(server_address, "Неизвестный узел")
-            button_text = f"{node_name}"
-
-        kb.button(text=button_text, callback_data=f"show_key_{i}")
-
-    kb.button(text="⬅️ Назад в главное меню", callback_data="back_to_main_menu")
-    kb.adjust(1)
-
-    text = "🔑 <b>Ваши ключи</b>\n\nВыберите сервер для просмотра ключа:"
+    text = (
+        "🔑 <b>Ваши ключи VPN</b>\n\n"
+        "Для автоматического подключения нажмите кнопку ниже.\n"
+        "Или скопируйте ссылку для ручной настройки:\n\n"
+        f"<code>{full_sub_url}</code>"
+    )
     try:
-        await call.message.edit_text(text, reply_markup=kb.as_markup())
-    except TelegramBadRequest:  # если старое сообщение было с фото
+        await call.message.edit_text(text, reply_markup=keys_screen_keyboard(build_import_url(full_sub_url)))
+    except TelegramBadRequest:
         await call.message.delete()
-        await call.message.answer(text, reply_markup=kb.as_markup())
+        await call.message.answer(text, reply_markup=keys_screen_keyboard(build_import_url(full_sub_url)))
 
 
-@profile_router.callback_query(F.data.startswith("show_key_"))
-async def show_single_key_handler(call: CallbackQuery, marzban: MarzClientCache):
-    """Показывает выбранный ключ, снова запрашивая данные."""
-    await call.answer()
-    
+# --- Хендлер для истории платежей пользователя ---
+@profile_router.callback_query(F.data == "my_payments")
+async def my_payments_handler(call: CallbackQuery):
+    """Показывает историю платежей пользователя."""
+    await call.answer("Загружаю историю платежей...")
+    user_id = call.from_user.id
+
+    payments = await payment_service.get_user_payments(user_id)
+
+    if not payments:
+        try:
+            await call.message.edit_text(
+                "💳 <b>Мои платежи</b>\n\n"
+                "У вас пока нет платежей.",
+                reply_markup=back_to_main_menu_keyboard()
+            )
+        except TelegramBadRequest:
+            await call.message.delete()
+            await call.message.answer(
+                "💳 <b>Мои платежи</b>\n\nУ вас пока нет платежей.",
+                reply_markup=back_to_main_menu_keyboard()
+            )
+        return
+
+    status_labels = {
+        'pending': '⏳ Ожидает', 'succeeded': '✅ Оплачен', 'failed': '❌ Ошибка',
+        'refunded': '💸 Возврат', 'cancelled': '🚫 Отменён'
+    }
+
+    lines = ["💳 <b>Мои платежи</b>\n"]
+    for p in payments[:10]:
+        label = status_labels.get(p.status, p.status)
+        date_str = p.created_at.strftime('%d.%m.%Y') if p.created_at else '—'
+        discount_info = f" (скидка {p.discount_percent}%)" if p.discount_percent else ""
+        lines.append(f"{label} | {date_str} | <b>{p.final_amount:.2f} RUB</b>{discount_info}")
+
     try:
-        key_index = int(call.data.split("_")[2])
-        
-        # Снова делаем запрос к Marzban, чтобы получить свежие данные
-        db_user, marzban_user = await get_marzban_user_info(call, marzban)
-        if not marzban_user: return
-        
-        links = get_user_attribute(marzban_user, 'links', [])
-        selected_key = links[key_index]
-
-        text = (
-            f"🔑 <b>Ваш ключ #{key_index + 1}</b>\n\n"
-            "Нажмите на ключ, чтобы скопировать его:\n\n"
-            f"<code>{selected_key}</code>"
-        )
-        await call.message.edit_text(text, reply_markup=single_key_view_keyboard())
-
-    except (IndexError, ValueError, TypeError):
-        await call.answer("Произошла ошибка, ключ не найден. Попробуйте снова.", show_alert=True)
+        await call.message.edit_text("\n".join(lines), reply_markup=back_to_main_menu_keyboard())
+    except TelegramBadRequest:
+        await call.message.delete()
+        await call.message.answer("\n".join(lines), reply_markup=back_to_main_menu_keyboard())

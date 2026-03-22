@@ -1,25 +1,21 @@
-# tgbot/handlers/user/payment.py (Полная, исправленная и оптимизированная версия)
+# tgbot/handlers/user/payment.py
 
-from datetime import datetime
 from aiogram import Router, F, Bot
-from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.filters import Command
 
 from loader import logger, config
-from database import requests as db
+from database import tariff_repo
 from marzban.init_client import MarzClientCache
+from tgbot.services import promo_service, subscription_service, payment_service
 from tgbot.handlers.user.profile import show_profile_logic
 from tgbot.keyboards.inline import cancel_fsm_keyboard, tariffs_keyboard, back_to_main_menu_keyboard
 from tgbot.services import payment
+from tgbot.states.payment_states import PromoApplyFSM
 
 payment_router = Router()
-
-# --- Состояния FSM ---
-class PromoApplyFSM(StatesGroup):
-    awaiting_code = State()
 
 # =============================================================================
 # --- БЛОК 1: ПОКАЗ ТАРИФОВ ---
@@ -29,8 +25,8 @@ async def show_tariffs_logic(event: Message | CallbackQuery, state: FSMContext):
     """Универсальная логика для показа списка тарифов."""
     fsm_data = await state.get_data()
     discount = fsm_data.get("discount")
-    
-    active_tariffs = await db.get_active_tariffs()
+
+    active_tariffs = await tariff_repo.get_active()
     tariffs_list = list(active_tariffs) if active_tariffs else []
 
     text = "Пожалуйста, выберите тарифный план:"
@@ -42,7 +38,7 @@ async def show_tariffs_logic(event: Message | CallbackQuery, state: FSMContext):
     if not tariffs_list:
         text = "К сожалению, сейчас нет доступных тарифов для покупки."
         reply_markup = back_to_main_menu_keyboard()
-    
+
     if isinstance(event, CallbackQuery):
         await event.message.edit_text(text, reply_markup=reply_markup)
     else:
@@ -69,53 +65,40 @@ async def apply_promo_from_broadcast(call: CallbackQuery, state: FSMContext):
     Применяет скидку и показывает меню тарифов.
     """
     await call.answer() # Сразу отвечаем, чтобы убрать "часики"
-    
+
     try:
         promo_code = call.data.split("_")[2]
     except IndexError:
         await call.answer("Ошибка в данных промокода.", show_alert=True)
         return
 
-    promo = await db.get_promo_code(promo_code)
     user_id = call.from_user.id
 
-    # --- Валидация промокода ---
-    
-    # Отдельно обрабатываем случай, когда пользователь уже использовал код
-    if promo and await db.has_user_used_promo(user_id, promo.id):
-        # Отправляем информативное сообщение и сразу показываем тарифы без скидки
-        await call.message.edit_text(
-            "❗️ <b>Вы уже использовали этот промокод.</b>\n\n"
-            "Каждый промокод можно использовать только один раз.\n"
-            "Пожалуйста, выберите тариф по стандартной цене:",
-            reply_markup=tariffs_keyboard(list(await db.get_active_tariffs()))
-        )
-        return
+    # --- Валидация промокода через сервис ---
+    result = await promo_service.validate(promo_code, user_id, require_discount=True)
 
-    # Остальные проверки
-    error_text = None
-    if not promo:
-        error_text = "Промокод не найден."
-    elif promo.discount_percent == 0:
-        error_text = "Этот промокод дает бонусные дни, а не скидку. Введите его вручную в разделе «Промокод»."
-    elif promo.uses_left <= 0:
-        error_text = "К сожалению, этот промокод уже закончился."
-    elif promo.expire_date and datetime.now() > promo.expire_date:
-        error_text = "Срок действия этого промокода истек."
-    
-    if error_text:
-        await call.answer(error_text, show_alert=True)
+    if not result.is_valid:
+        # Отдельно обрабатываем случай, когда пользователь уже использовал код
+        if "уже использовали" in result.error_message:
+            active_tariffs = await tariff_repo.get_active()
+            await call.message.edit_text(
+                "❗️ <b>Вы уже использовали этот промокод.</b>\n\n"
+                "Каждый промокод можно использовать только один раз.\n"
+                "Пожалуйста, выберите тариф по стандартной цене:",
+                reply_markup=tariffs_keyboard(list(active_tariffs))
+            )
+        else:
+            await call.answer(result.error_message, show_alert=True)
         return
 
     # --- Применение промокода и показ тарифов ---
     try:
-        # Отмечаем, что пользователь использовал промокод
-        await db.use_promo_code(user_id, promo)
-        
+        await promo_service.apply(user_id, result.promo)
+
         # Сохраняем скидку в FSM для следующего шага
         await state.set_state(None)
-        await state.update_data(discount=promo.discount_percent, promo_code=promo_code)
-        
+        await state.update_data(discount=result.promo.discount_percent, promo_code=promo_code)
+
         # Вызываем нашу универсальную функцию для показа тарифов со скидкой
         await show_tariffs_logic(call, state)
 
@@ -128,9 +111,8 @@ async def _start_promo_input(event: Message | CallbackQuery, state: FSMContext):
     Универсальная функция для начала сценария ввода промокода.
     """
     await state.set_state(PromoApplyFSM.awaiting_code)
-    
+
     text = "Введите ваш промокод:"
-    # Кнопка "Отмена" будет возвращать пользователя к списку тарифов
     reply_markup = back_to_main_menu_keyboard()
 
     if isinstance(event, CallbackQuery):
@@ -142,7 +124,6 @@ async def _start_promo_input(event: Message | CallbackQuery, state: FSMContext):
 @payment_router.message(Command("promo"))
 async def promo_command_handler(message: Message, state: FSMContext):
     """Начинает сценарий ввода промокода по команде."""
-    # Просто вызываем нашу универсальную функцию
     await _start_promo_input(message, state)
 
 
@@ -151,44 +132,31 @@ async def promo_command_handler(message: Message, state: FSMContext):
 async def enter_promo_callback_handler(call: CallbackQuery, state: FSMContext):
     """Начинает сценарий ввода промокода по кнопке."""
     await call.answer()
-    # Просто вызываем нашу универсальную функцию
     await _start_promo_input(call, state)
-        
+
 @payment_router.message(PromoApplyFSM.awaiting_code)
 async def process_promo_code(message: Message, state: FSMContext, bot: Bot, marzban: MarzClientCache):
     """Обрабатывает введенный промокод."""
     code = message.text.upper()
-    promo = await db.get_promo_code(code)
     user_id = message.from_user.id
 
     await message.delete() # Сразу удаляем сообщение с кодом
 
-    error_text = None
-    if not promo: error_text = "Промокод не найден."
-    elif promo.uses_left <= 0: error_text = "Этот промокод уже закончился."
-    elif promo.expire_date and promo.expire_date < datetime.now(): error_text = "Срок действия этого промокода истек."
-    elif await db.has_user_used_promo(user_id, promo.id): error_text = "Вы уже использовали этот промокод."
-
-    if error_text:
-        await message.answer(error_text)
+    # --- Валидация через сервис ---
+    result = await promo_service.validate(code, user_id)
+    if not result.is_valid:
+        await message.answer(result.error_message)
         return
 
-    await db.use_promo_code(user_id, promo)
+    promo = result.promo
+
+    # Отмечаем использование промокода
+    await promo_service.apply(user_id, promo)
 
     if promo.bonus_days > 0:
         await state.clear()
-        user_from_db = await db.get_user(user_id) # Получаем юзера один раз
-        marzban_username = (user_from_db.marzban_username or f"user_{user_id}").lower()
-        
         try:
-            # --- ИСПРАВЛЕНО: Используем наш "умный" метод modify_user ---
-            await marzban.modify_user(username=marzban_username, expire_days=promo.bonus_days)
-            
-            # Обновляем наши локальные данные ТОЛЬКО после успешной операции в Marzban
-            await db.extend_user_subscription(user_id, promo.bonus_days)
-            if not user_from_db.marzban_username:
-                await db.update_user_marzban_username(user_id, marzban_username)
-            
+            await subscription_service.extend(user_id, promo.bonus_days)
             await message.answer(f"✅ Промокод успешно применен! Вам начислено <b>{promo.bonus_days} бонусных дней</b>.")
             # Показываем обновленный профиль
             await show_profile_logic(message, marzban, bot)
@@ -196,7 +164,7 @@ async def process_promo_code(message: Message, state: FSMContext, bot: Bot, marz
         except Exception as e:
             logger.error(f"Failed to apply bonus days for promo code {code} for user {user_id}: {e}", exc_info=True)
             await message.answer("❌ Произошла ошибка при начислении бонусных дней. Обратитесь в поддержку.")
-    
+
     elif promo.discount_percent > 0:
         # Сохраняем скидку в состояние и показываем тарифы
         await state.set_state(None) # Выходим из состояния ввода промокода
@@ -211,11 +179,49 @@ async def process_promo_code(message: Message, state: FSMContext, bot: Bot, marz
 async def select_tariff_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
     """Обрабатывает выбор тарифа и генерирует ссылку на оплату."""
     await call.answer()
-    
+
+    user_id = call.from_user.id
     tariff_id = int(call.data.split("_")[2])
-    tariff = await db.get_tariff_by_id(tariff_id)
+    tariff = await tariff_repo.get_by_id(tariff_id)
     if not tariff:
         await call.message.edit_text("Ошибка! Тариф не найден.", reply_markup=back_to_main_menu_keyboard())
+        return
+
+    # Проверка на дубликат pending-платежа
+    pending = await payment_service.get_pending_payment(user_id)
+    if pending:
+        pending_tariff = await tariff_repo.get_by_id(pending.tariff_id)
+        tariff_name = pending_tariff.name if pending_tariff else "Неизвестный"
+        tariff_days = pending_tariff.duration_days if pending_tariff else "?"
+
+        # Пытаемся получить ссылку на оплату из YooKassa
+        existing_url = payment.get_payment_url(
+            pending.yookassa_payment_id,
+            shop_id=config.yookassa.shop_id,
+            secret_key=config.yookassa.secret_key,
+        )
+
+        price_text = f"<b>{pending.final_amount} RUB</b>"
+        if pending.discount_percent:
+            price_text = (
+                f"<s>{pending.original_amount} RUB</s>\n"
+                f"Скидка {pending.discount_percent}% ({pending.promo_code}): <b>{pending.final_amount} RUB</b>"
+            )
+
+        kb = InlineKeyboardBuilder()
+        if existing_url:
+            kb.button(text="💳 Перейти к оплате", url=existing_url)
+        kb.button(text="⬅️ Назад", callback_data="buy_subscription")
+        kb.adjust(1)
+
+        await call.message.edit_text(
+            "⏳ У вас уже есть неоплаченный счёт:\n\n"
+            f"Тариф: <b>{tariff_name}</b>\n"
+            f"Срок: <b>{tariff_days} дней</b>\n"
+            f"Сумма: {price_text}\n\n"
+            "Завершите оплату или дождитесь автоматической отмены (10 мин).",
+            reply_markup=kb.as_markup()
+        )
         return
 
     fsm_data = await state.get_data()
@@ -224,7 +230,7 @@ async def select_tariff_handler(call: CallbackQuery, state: FSMContext, bot: Bot
 
     original_price = tariff.price
     final_price = original_price
-    
+
     if discount_percent:
         final_price = round(original_price * (1 - discount_percent / 100), 2)
         price_text = (
@@ -234,21 +240,40 @@ async def select_tariff_handler(call: CallbackQuery, state: FSMContext, bot: Bot
     else:
         price_text = f"<b>{original_price} RUB</b>"
 
-    payment_url, _ = payment.create_payment(
-        user_id=call.from_user.id,
+    payment_url, yookassa_payment_id = payment.create_payment(
+        user_id=user_id,
         amount=final_price,
         description=f"Оплата тарифа '{tariff.name}'" + (f" (скидка {discount_percent}%)" if discount_percent else ""),
-        return_url= f"https://t.me/{(await bot.get_me()).username}",
-        metadata={'user_id': str(call.from_user.id), 'tariff_id': tariff_id},
-        shop_id= config.yookassa.shop_id,
-        secret_key= config.yookassa.secret_key
+        return_url=f"https://t.me/{(await bot.get_me()).username}",
+        metadata={'user_id': str(user_id), 'tariff_id': tariff_id},
+        shop_id=config.yookassa.shop_id,
+        secret_key=config.yookassa.secret_key
+    )
+
+    # Сохраняем платёж в БД
+    await payment_service.create_payment_record(
+        yookassa_payment_id=yookassa_payment_id,
+        user_id=user_id,
+        tariff_id=tariff_id,
+        original_amount=original_price,
+        final_amount=final_price,
+        source='bot',
+        promo_code=promo_code,
+        discount_percent=discount_percent or 0,
+    )
+
+    logger.info(
+        f"Payment created: user={user_id}, tariff={tariff.name}, "
+        f"amount={final_price}, original={original_price}, "
+        f"discount={discount_percent or 0}%, promo={promo_code or 'none'}, "
+        f"yookassa_id={yookassa_payment_id}"
     )
 
     payment_kb = InlineKeyboardBuilder()
     payment_kb.button(text="💳 Перейти к оплате", url=payment_url)
     payment_kb.button(text="⬅️ Назад к выбору тарифа", callback_data="buy_subscription")
     payment_kb.adjust(1)
-    
+
     sent_message = await call.message.edit_text(
         f"Вы выбрали тариф: <b>{tariff.name}</b>\n"
         f"Срок: <b>{tariff.duration_days} дней</b>\n\n"

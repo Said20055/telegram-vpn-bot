@@ -18,6 +18,8 @@ async def get_current_user(request: Request):
         token_str = param if scheme.lower() == "bearer" else token
 
         payload = jwt.decode(token_str, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") == "registration":
+            return None
         user_id: str = payload.get("sub")
         if user_id is None:
             return None

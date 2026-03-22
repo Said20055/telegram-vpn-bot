@@ -15,6 +15,7 @@ from .tariffs import admin_tariffs_router
 from .cancel import cancel_router
 from .promocodes import admin_promo_router
 from .channels import admin_channels_router
+from .external_vpn import ext_vpn_router
 
 # Создаем один большой "агрегирующий" роутер для всей админки
 admin_router = Router(name="admin")
@@ -34,7 +35,8 @@ admin_router.include_routers(
     admin_broadcast_router,
     admin_tariffs_router,
     admin_promo_router,
-    admin_channels_router
+    admin_channels_router,
+    ext_vpn_router,
 )
 
 # Экспортируем только один, уже собранный и настроенный admin_router

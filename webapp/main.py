@@ -12,12 +12,12 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 
 from db import User
-from webapp.routers import auth, dashboard, payment
+from webapp.routers import auth, dashboard, payment, subscription
 from webapp.dependencies import get_current_user
 from loader import logger, marzban_client
 from typing import Optional
 from db import Tariff
-from database.requests import get_active_tariffs
+from database import tariff_repo
 
 
 
@@ -56,6 +56,7 @@ def timestamp_to_date(value):
 templates.env.filters['timestamp_to_date'] = timestamp_to_date
 
 # --- Роутеры ---
+app.include_router(subscription.router)  # /sub/{marzban_username} — агрегирующий прокси
 app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(payment.router)
@@ -63,10 +64,12 @@ app.include_router(payment.router)
 # --- Главная ---
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request, user: User = Depends(get_current_user)):
-    tarriffs = await get_active_tariffs()
+    if user:
+        return RedirectResponse(url="/profile/", status_code=302)
+    tariffs = await tariff_repo.get_active()
     return templates.TemplateResponse("index.html", {
         "request": request,
         "title": "Главная",
         "user": user,
-        "tariffs": tarriffs
+        "tariffs": tariffs
     })

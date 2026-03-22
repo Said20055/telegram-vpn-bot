@@ -1,9 +1,8 @@
 # tgbot/handlers/admin/users.py (Полная, рабочая версия)
 
-import asyncio
 from aiogram import Router, F, Bot
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
+from tgbot.states.admin_states import AdminFSM
 from aiogram.types import Message, CallbackQuery
 from loader import logger
 
@@ -11,8 +10,8 @@ from loader import logger
 from tgbot.filters.admin import IsAdmin
 from tgbot.keyboards.inline import user_manage_keyboard, confirm_delete_keyboard, back_to_main_menu_keyboard, back_to_admin_main_menu_keyboard
 
-# --- База данных и API ---
-from database import requests as db
+# --- Сервисы ---
+from tgbot.services import user_service, subscription_service, payment_service
 from marzban.init_client import MarzClientCache
 
 
@@ -20,13 +19,6 @@ admin_users_router = Router()
 # Применяем фильтр админа ко всем хендлерам в этом роутере
 admin_users_router.message.filter(IsAdmin())
 admin_users_router.callback_query.filter(IsAdmin())
-
-
-# --- Состояния FSM ---
-class AdminFSM(StatesGroup):
-    find_user = State()
-    add_days_user_id = State()
-    add_days_amount = State()
 
 
 # =============================================================================
@@ -38,7 +30,7 @@ async def show_user_card(message_or_call, user_id: int):
     Отображает карточку пользователя с информацией и кнопками управления.
     Вынесена в отдельную функцию для переиспользования.
     """
-    user = await db.get_user(user_id)
+    user = await user_service.get_user(user_id)
     if not user:
         text = "Пользователь не найден."
         reply_markup = back_to_main_menu_keyboard()
@@ -86,19 +78,15 @@ async def find_user(message: Message, state: FSMContext):
     """Находит пользователя по ID или username и показывает его карточку."""
     await state.clear()
     query = message.text.strip()
-    user = None
 
-    if query.isdigit():
-        user = await db.get_user(int(query))
-    else:
-        user = await db.get_user_by_username(query.replace("@", ""))
-    
+    user = await user_service.find_user(query)
+
     if not user:
         await message.answer("Пользователь с таким ID или username не найден в базе данных бота.\n\n"
                              "Попробуйте еще раз:")
         await state.set_state(AdminFSM.find_user)
         return
-        
+
     await show_user_card(message, user.user_id)
 
 
@@ -109,19 +97,19 @@ async def add_days_start(call: CallbackQuery, state: FSMContext):
     """Начало сценария добавления дней подписки."""
     user_id = int(call.data.split("_")[3])
     await state.update_data(user_id=user_id)
-    
+
     await call.message.edit_text(f"Введите количество дней для добавления пользователю <code>{user_id}</code>:")
     await state.set_state(AdminFSM.add_days_amount)
 
 
 @admin_users_router.message(AdminFSM.add_days_amount)
-async def add_days_finish(message: Message, state: FSMContext, marzban: MarzClientCache, bot: Bot):
+async def add_days_finish(message: Message, state: FSMContext, bot: Bot):
     """
     Завершение сценария добавления дней подписки.
     Продлевает подписку или создает нового пользователя в Marzban, если его нет.
     Отправляет уведомления админу и пользователю.
     """
-    
+
     # --- 1. Валидация ввода от администратора ---
     try:
         days_to_add = int(message.text)
@@ -136,38 +124,24 @@ async def add_days_finish(message: Message, state: FSMContext, marzban: MarzClie
     data = await state.get_data()
     user_id = data.get("user_id")
     await state.clear()
-    
+
     await message.answer(f"⏳ Продлеваю/создаю подписку для пользователя <code>{user_id}</code> на <b>{days_to_add}</b> дн...")
 
-    user = await db.get_user(user_id)
-    if not user:
-        await message.answer(f"Не удалось найти пользователя <code>{user_id}</code> в базе.")
-        return
-        
-    # --- 3. Основная логика: взаимодействие с Marzban и нашей БД ---
-    marzban_username = (user.marzban_username or f"user_{user_id}").lower()
-
+    # --- 3. Основная логика через сервис подписок ---
     try:
-        # Вызываем "умный" метод, который сам решает, создать или продлить.
-        await marzban.modify_user(username=marzban_username, expire_days=days_to_add)
-        
-        # Если у пользователя не было marzban_username, значит, мы его только что создали.
-        # Записываем имя в нашу БД.
-        if not user.marzban_username:
-            await db.update_user_marzban_username(user_id, marzban_username)
-            logger.info(f"Admin CREATED and subscribed Marzban user '{marzban_username}' for {days_to_add} days.")
-        else:
-            logger.info(f"Admin EXTENDED subscription for Marzban user '{marzban_username}' by {days_to_add} days.")
+        result = await subscription_service.extend(user_id, days_to_add)
 
-        # Обновляем дату подписки в нашей БД.
-        await db.extend_user_subscription(user_id, days=days_to_add)
-        
+        if result.is_new_marzban_user:
+            logger.info(f"Admin CREATED and subscribed Marzban user '{result.marzban_username}' for {days_to_add} days.")
+        else:
+            logger.info(f"Admin EXTENDED subscription for Marzban user '{result.marzban_username}' by {days_to_add} days.")
+
         # Получаем обновленные данные для отчета.
-        updated_user = await db.get_user(user_id)
+        updated_user = await user_service.get_user(user_id)
         new_sub_end_date = updated_user.subscription_end_date.strftime('%d.%m.%Y')
-        
+
         # --- 4. Отправляем отчеты об успехе ---
-        
+
         # Отчет для администратора
         await message.answer(
             f"✅ <b>Успешно!</b>\n\n"
@@ -186,10 +160,12 @@ async def add_days_finish(message: Message, state: FSMContext, marzban: MarzClie
             logger.warning(f"Could not send notification to user {user_id} about subscription extension: {e}")
             await message.answer("❗️Не удалось уведомить пользователя (возможно, он заблокировал бота).")
 
+    except ValueError as e:
+        await message.answer(f"❌ Ошибка: {e}")
     except Exception as e:
         logger.error(f"Admin failed to add days for user {user_id}: {e}", exc_info=True)
         await message.answer(f"❌ Произошла ошибка при взаимодействии с Marzban для пользователя <code>{user_id}</code>. Проверьте логи.")
-    
+
     # В любом случае (успех или ошибка) показываем админу обновленную карточку пользователя.
     await show_user_card(message, user_id)
 
@@ -208,34 +184,16 @@ async def delete_user_confirm(call: CallbackQuery):
 @admin_users_router.callback_query(F.data.startswith("admin_confirm_delete_user_"))
 async def delete_user_finish(call: CallbackQuery, marzban: MarzClientCache):
     await call.answer("Удаляю пользователя...")
-    
+
     try:
         user_id = int(call.data.split("_")[4])
-        user = await db.get_user(user_id)
-        # ... (проверки на существование user) ...
-        
-        marzban_deletion_success = False
-        if user.marzban_username:
-            logger.info(f"Admin attempt 1 to delete '{user.marzban_username}' from Marzban")
-            # Первая попытка
-            success_attempt_1 = await marzban.delete_user(user.marzban_username)
-            
-            if success_attempt_1:
-                marzban_deletion_success = True
-            else:
-                # Если первая попытка неудачна, ждем секунду и пробуем снова
-                logger.warning(f"First attempt to delete '{user.marzban_username}' failed. Retrying in 1 second...")
-                await asyncio.sleep(1) 
-                # Вторая попытка
-                marzban_deletion_success = await marzban.delete_user(user.marzban_username)
-        else:
-            marzban_deletion_success = True # Если в Marzban и не было, считаем успехом
 
-        if marzban_deletion_success:
-            await db.delete_user(user.user_id)
+        success = await user_service.delete_user(user_id, marzban)
+
+        if success:
             await call.message.edit_text(f"✅ Пользователь <code>{user_id}</code> успешно удален.")
         else:
-            await call.message.edit_text(f"❌ **Ошибка!**\n\nНе удалось удалить пользователя из Marzban даже со второй попытки. Проверьте логи Marzban.")
+            await call.message.edit_text(f"❌ **Ошибка!**\n\nНе удалось удалить пользователя. Проверьте логи.")
 
     except Exception as e:
         logger.error(f"Unexpected error in delete_user_finish for user_id from call {call.data}: {e}", exc_info=True)
@@ -247,3 +205,46 @@ async def show_user_handler(call: CallbackQuery):
     """Показывает карточку пользователя (нужно для кнопки 'Отмена' при удалении)."""
     user_id = int(call.data.split("_")[3])
     await show_user_card(call, user_id)
+
+
+# --- Блок истории платежей ---
+@admin_users_router.callback_query(F.data.startswith("admin_payments_"))
+async def admin_user_payments(call: CallbackQuery):
+    """Показывает историю платежей пользователя."""
+    await call.answer("Загружаю историю платежей...")
+    user_id = int(call.data.split("_")[2])
+
+    payments = await payment_service.get_user_payments(user_id)
+
+    if not payments:
+        from aiogram.utils.keyboard import InlineKeyboardBuilder
+        kb = InlineKeyboardBuilder()
+        kb.button(text="⬅️ Назад к пользователю", callback_data=f"admin_show_user_{user_id}")
+        kb.adjust(1)
+        await call.message.edit_text(
+            f"💳 <b>История платежей</b> (ID: <code>{user_id}</code>)\n\n"
+            "Платежей не найдено.",
+            reply_markup=kb.as_markup()
+        )
+        return
+
+    status_icons = {
+        'pending': '⏳', 'succeeded': '✅', 'failed': '❌',
+        'refunded': '💸', 'cancelled': '🚫'
+    }
+
+    lines = [f"💳 <b>История платежей</b> (ID: <code>{user_id}</code>)\n"]
+    for p in payments[:15]:
+        icon = status_icons.get(p.status, '❓')
+        date_str = p.created_at.strftime('%d.%m.%Y %H:%M') if p.created_at else '—'
+        discount_info = f" (скидка {p.discount_percent}%)" if p.discount_percent else ""
+        lines.append(
+            f"{icon} {date_str} — <b>{p.final_amount:.2f} RUB</b>{discount_info} [{p.source}]"
+        )
+
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅️ Назад к пользователю", callback_data=f"admin_show_user_{user_id}")
+    kb.adjust(1)
+
+    await call.message.edit_text("\n".join(lines), reply_markup=kb.as_markup())

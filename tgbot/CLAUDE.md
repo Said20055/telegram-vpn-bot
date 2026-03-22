@@ -1,0 +1,344 @@
+# tgbot/ — Документация модуля бота
+
+## Структура директорий
+
+```
+tgbot/
+├── handlers/
+│   ├── user/          — пользовательские сценарии
+│   ├── admin/         — административные сценарии
+│   ├── support.py     — чат поддержки
+│   └── webhook_handlers.py — входящие вебхуки от YooKassa
+├── services/          — бизнес-логика (сервисный слой)
+├── keyboards/         — inline-клавиатуры
+├── states/            — FSM-состояния
+├── filters/           — фильтры (IsAdmin)
+└── middlewares/       — антиспам, таймаут поддержки
+```
+
+---
+
+## Handlers — пользовательские
+
+### `handlers/user/start.py` — `start_router`
+Центральный файл меню. Все точки входа в главное меню идут через `_show_main_menu()`.
+
+| Функция / хендлер | Триггер | Что делает |
+|---|---|---|
+| `_show_main_menu(target, user_id, full_name)` | вызывается из других хендлеров | Вызывает `profile_service.get_profile()`, строит текст со статусом подписки + трафиком, показывает `main_menu_keyboard()` |
+| `process_start_command` | `/start` | Регистрирует нового / показывает меню существующему; запускает онбординг для новых |
+| `_start_onboarding` | вызывается из `process_start_command` | Показывает список каналов для подписки (шаг 1 онбординга) |
+| `onboarding_check_subscription` | `onboarding_check_sub` | Проверяет подписку на каналы → активирует триал → шаг 2 |
+| `_activate_and_show_download` | вызывается из онбординга | Активирует триал/реферальный бонус, показывает скачивание Happ |
+| `onboarding_app_installed` | `onboarding_app_installed` | Шаг 3 онбординга: показывает импорт-ссылку в Happ |
+| `show_referral_info` | вызывается из хендлеров | Формирует реферальную ссылку и статистику |
+| `referral_command_handler` | `/referral` | → `show_referral_info` |
+| `referral_program_handler` | `referral_program` | → `show_referral_info` |
+| `back_to_main_menu_handler` | `back_to_main_menu` | Очищает FSM, → `_show_main_menu` |
+
+**Текст главного меню** (активная подписка):
+```
+👋 Добро пожаловать, <b>Иван</b>!
+
+📋 <b>Ваша подписка:</b>
+🟢 Статус: active
+📅 Активна до: 15.04.2026 (осталось 24 дн.)
+📊 Трафик: 12.3 GB / Безлимит
+```
+
+---
+
+### `handlers/user/profile.py` — `profile_router`
+Профиль и ключи.
+
+| Функция / хендлер | Триггер | Что делает |
+|---|---|---|
+| `show_profile_logic(event, marzban, bot)` | вызывается из payment.py и webhook_handlers | Показывает профиль с QR-кодом и sub_url; используется после оплаты |
+| `profile_command_handler` | `/profile` | → `show_profile_logic` |
+| `my_profile_callback_handler` | `my_profile` | → `show_profile_logic` |
+| `my_keys_handler` | `my_keys` | Показывает sub_url для копирования + кнопку импорта в Happ |
+| `my_payments_handler` | `my_payments` | История последних 10 платежей пользователя |
+
+**`my_keys_handler`** — упрощённый экран: берёт `subscription_url` из Marzban через `profile_service`, строит `full_sub_url = https://{domain}:8443{sub_url}`, показывает `keys_screen_keyboard(build_import_url(full_sub_url))`.
+
+---
+
+### `handlers/user/payment.py` — `payment_router`
+Оплата и промокоды.
+
+| Функция / хендлер | Триггер | Что делает |
+|---|---|---|
+| `show_tariffs_logic(event, state)` | вызывается внутри | Показывает список тарифов, учитывает скидку из FSM |
+| `payment_command_handler` | `/payment` | → `show_tariffs_logic` |
+| `buy_subscription_callback_handler` | `buy_subscription` | → `show_tariffs_logic` |
+| `apply_promo_from_broadcast` | `apply_promo_<code>` | Применяет промокод из рассылки, → тарифы со скидкой |
+| `enter_promo_callback_handler` | `enter_promo_code` | Запускает FSM ввода промокода (из тарифной клавиатуры) |
+| `process_promo_code` | `PromoApplyFSM.awaiting_code` | Валидирует промокод: бонусные дни → extend + показ профиля; скидка → тарифы |
+| `select_tariff_handler` | `select_tariff_<id>` | Создаёт платёж в YooKassa, сохраняет в БД, отправляет ссылку оплаты |
+
+**FSM скидки**: `state.update_data(discount=N, promo_code='CODE')` — подхватывается в `show_tariffs_logic` и `select_tariff_handler`.
+
+---
+
+### `handlers/user/trial_sub.py` — `trial_sub_router`
+Повторная активация триала для уже зарегистрированных пользователей (кнопка "Бесплатная подписка" в меню).
+
+| Хендлер | Триггер | Что делает |
+|---|---|---|
+| `start_trial_process` | `start_trial_process` | Проверяет, не получал ли уже триал; показывает каналы для подписки |
+| `check_subscription_handler` | `check_subscription` | Проверяет подписку → `give_trial_subscription` |
+| `give_trial_subscription` | вызывается внутри | Активирует триал через `subscription_service.activate_trial()` |
+
+---
+
+### `handlers/user/link_email.py` — `link_email_router`
+Привязка email к аккаунту (для доступа к web-dashboard).
+
+FSM: `EmailLinkFSM` → запрашивает email → отправляет код верификации → подтверждает.
+
+---
+
+### `handlers/user/instruction.py` — `instruction_router`
+Инструкция по подключению VPN. Триггер: `instruction_info` (из `keys_screen_keyboard`).
+
+---
+
+### `handlers/webhook_handlers.py`
+Входящий вебхук от YooKassa (POST /yookassa).
+
+```
+Вебхук → parse_webhook_notification → payment_service.process_payment_succeeded()
+  → subscription extended → notify user (Telegram) + web user (email)
+  → show_profile_logic (для Telegram-пользователей)
+```
+
+---
+
+### `handlers/support.py` — `support_router`
+Чат с поддержкой (FSM). Пользователь ↔ Администраторы.
+
+---
+
+## Handlers — администраторские (`handlers/admin/`)
+
+| Файл | Что делает |
+|---|---|
+| `main.py` | Точка входа `/admin`, главное меню, статистика |
+| `users.py` | Поиск пользователя, добавление дней, сброс ключа, удаление |
+| `tariffs.py` | CRUD тарифов (название, цена, срок, вкл/выкл, удаление) |
+| `promocodes.py` | CRUD промокодов (бонусные дни или скидка %) |
+| `channels.py` | CRUD каналов для онбординга |
+| `broadcast.py` | Рассылка: выбор аудитории → текст → опциональный промокод → подтверждение → отправка |
+| `cancel.py` | Универсальная отмена FSM для admin-сценариев |
+| `external_vpn.py` | Управление внешними VPN-конфигами (добавление по URL / raw-вставка, выбор серверов, вкл/выкл, удаление) |
+
+Все admin-хендлеры защищены фильтром `IsAdmin` (см. `filters/admin.py`, применяется на уровне `admin_router` в `admin/__init__.py`).
+
+### `handlers/admin/external_vpn.py` — `ext_vpn_router`
+Управление внешними VPN-конфигами из сторонних подписок. Два способа добавления:
+1. **По URL** — бот делает GET-запрос с HWID-заголовками Happ, парсит base64-подписку
+2. **Raw-вставка** — админ вставляет конфиги напрямую (plain-текст или base64)
+
+| Хендлер | Триггер | Что делает |
+|---|---|---|
+| `show_ext_vpn_menu` | вызывается из хендлеров | Показывает главное меню: кол-во источников, кнопки добавления |
+| `ext_vpn_menu_handler` | `admin_ext_vpn` | → `show_ext_vpn_menu` |
+| `ext_vpn_add_start` | `ext_vpn_add` | FSM: запрашивает URL подписки |
+| `ext_vpn_add_raw_start` | `ext_vpn_add_raw` | FSM: запрашивает raw-конфиги |
+| `ext_vpn_receive_url` | `ExternalVpnFSM.waiting_url` | Fetch URL с HWID headers → парсинг → FSM waiting_name |
+| `ext_vpn_receive_raw` | `ExternalVpnFSM.waiting_raw_configs` | Парсинг raw-текста → FSM waiting_name |
+| `ext_vpn_receive_name` | `ExternalVpnFSM.waiting_name` | Сохраняет имя → клавиатура выбора серверов |
+| `ext_vpn_toggle_server` | `ext_vpn_toggle_<idx>` | Переключает чекбокс сервера |
+| `ext_vpn_change_page` | `ext_vpn_page_<page>` | Пагинация (8 серверов на страницу) |
+| `ext_vpn_select_all` | `ext_vpn_select_all` | Выбрать все серверы |
+| `ext_vpn_save` | `ext_vpn_save` | Сохраняет выбранные серверы в БД |
+| `ext_vpn_list_subs` | `ext_vpn_list_subs` | Список источников подписок |
+| `ext_vpn_sub_detail` | `ext_vpn_sub_<id>` | Детали источника (кол-во серверов) |
+| `ext_vpn_configs_list` | `ext_vpn_configs_<sub_id>` | Список серверов с кнопками вкл/выкл |
+| `ext_vpn_toggle_config` | `ext_vpn_cfg_toggle_<id>` | Вкл/выкл конкретного сервера |
+| `ext_vpn_delete_sub` | `ext_vpn_del_sub_<id>` | Удаление источника (каскадное удаление серверов) |
+
+**Флоу добавления:**
+```
+/admin → "🌐 Внешние VPN"
+  → "🔗 Добавить по URL" / "📋 Вставить конфиги"
+    → Ввод URL / raw-конфигов
+    → Ввод названия источника
+    → Клавиатура выбора серверов (✅/⬜, пагинация)
+    → "💾 Сохранить выбранные"
+    → Конфиги сохранены в БД, автоматически добавляются в подписки
+```
+
+---
+
+## Services — сервисный слой
+
+Все сервисы инициализируются в `services/__init__.py` как синглтоны и передаются через DI или импортируются напрямую.
+
+| Объект | Класс | Зависимости | Ключевые методы |
+|---|---|---|---|
+| `subscription_service` | `SubscriptionService` | `user_repo`, `marzban_client` | `activate_trial(user_id, days)`, `extend(user_id, days)` |
+| `referral_service` | `ReferralService` | `user_repo`, `subscription_service` | `activate_new_user_referral(user_id, referrer_id, days)` |
+| `promo_service` | `PromoCodeService` | `promo_repo`, `user_repo` | `validate(code, user_id)`, `apply(user_id, promo)` |
+| `user_service` | `UserService` | `user_repo`, `stats_repo` | `register_or_get(...)`, `get_user(user_id)`, `get_referral_info(user_id)` |
+| `profile_service` | `ProfileService` | `user_repo`, `marzban_client` | `get_profile(user_id) → ProfileData` |
+| `payment_service` | `PaymentService` | `subscription_service`, `referral_service`, `user_repo`, `tariff_repo`, `payment_repo` | `process_payment_succeeded(...)`, `create_payment_record(...)`, `get_pending_payment(user_id)`, `get_user_payments(user_id)` |
+| `admin_stats_service` | `AdminStatsService` | `stats_repo`, `marzban_client`, `payment_repo` | `get_stats()` |
+| `support_service` | `SupportService` | `user_repo` | управление состоянием чата поддержки |
+| `external_vpn_service` | `ExternalVpnService` | `external_sub_repo`, `external_config_repo` | `fetch_and_parse(url)`, `save_configs(url, name, selected)`, `get_active_links()`, `toggle_config(id)`, `delete_subscription(id)` |
+
+### `services/external_vpn_service.py`
+Работа с внешними VPN-подписками:
+- `parse_subscription(content)` — парсит base64 или plain-текст в `[{name, raw_link}]`. Сначала пробует plain-текст, потом base64 decode
+- `parse_raw_configs(text)` — alias для `parse_subscription`, используется в raw-вставке
+- `ExternalVpnService.fetch_and_parse(url)` — GET-запрос с HWID-заголовками Happ (`x-hwid`, `x-device-os`, `x-ver-os`, `x-device-model`), парсит ответ
+- `ExternalVpnService.get_active_links()` — все `raw_link` активных конфигов (используется в subscription proxy)
+- Поддерживаемые протоколы: `vless://`, `vmess://`, `trojan://`, `ss://`, `hysteria2://`, `hy2://`, `tuic://`
+
+### `services/payment.py` (не класс, а модуль)
+Низкоуровневая работа с YooKassa API:
+- `create_payment(user_id, amount, description, return_url, metadata, shop_id, secret_key)` → `(payment_url, yookassa_payment_id)`
+- `get_payment_url(yookassa_payment_id, shop_id, secret_key)` → `str | None`
+- `parse_webhook_notification(data)` → распаковывает входящий вебхук
+
+### `services/scheduler.py`
+APScheduler задачи:
+- Проверка истекающих подписок (за N дней до конца) → `send_reminder(bot, user, text)`
+- Проверка просроченных pending-платежей → отмена через 30 мин
+
+### `services/utils.py`
+- `format_traffic(bytes) → str` — форматирование трафика (KB/MB/GB)
+- `get_user_attribute(marzban_user, key, default)` — безопасное получение атрибута из dict Marzban
+- `decline_word(n, forms)` — склонение числительных
+
+### `services/qr_generator.py`
+- `create_qr_code(url) → BytesIO` — генерация QR-кода для subscription_url
+
+### `services/subscription.py` (утилита, не класс)
+- `check_subscription(bot, user_id) → bool` — проверяет подписку пользователя на все каналы из БД
+
+---
+
+## Keyboards (`keyboards/inline.py`)
+
+| Функция | Где используется |
+|---|---|
+| `main_menu_keyboard(has_active_sub, has_email)` | `start.py/_show_main_menu` |
+| `tariffs_keyboard(tariffs, promo_procent)` | `payment.py`, `scheduler.py` |
+| `keys_screen_keyboard(import_url)` | `profile.py/my_keys_handler` |
+| `profile_keyboard(subscription_url)` | `profile.py/show_profile_logic` |
+| `onboarding_subscribe_keyboard(channels)` | `start.py/_start_onboarding` |
+| `onboarding_download_app_keyboard()` | `start.py/_activate_and_show_download` |
+| `onboarding_import_keyboard(subscription_url)` | `start.py/onboarding_app_installed` |
+| `channels_subscribe_keyboard(channels)` | `trial_sub.py` |
+| `back_to_main_menu_keyboard()` | везде как fallback |
+| `cancel_fsm_keyboard(back_callback_data)` | admin FSM |
+| `admin_main_menu_keyboard()` | `admin/main.py` |
+| `user_manage_keyboard(user_id)` | `admin/users.py` |
+| `tariffs_list_keyboard / single_tariff_manage_keyboard` | `admin/tariffs.py` |
+| `promo_codes_list_keyboard / promo_type_keyboard` | `admin/promocodes.py` |
+| `broadcast_audience_keyboard / broadcast_promo_keyboard / confirm_broadcast_keyboard` | `admin/broadcast.py` |
+| `close_support_chat_keyboard()` | `support.py` |
+| `external_vpn_menu_keyboard(subs_count)` | `admin/external_vpn.py` — главное меню (2 кнопки добавления + управление) |
+| `ext_vpn_server_selection_keyboard(servers, selected, page)` | `admin/external_vpn.py` — выбор серверов с чекбоксами и пагинацией |
+| `ext_vpn_subscriptions_keyboard(subs)` | `admin/external_vpn.py` — список источников |
+| `ext_vpn_sub_manage_keyboard(sub_id, count)` | `admin/external_vpn.py` — управление источником |
+| `ext_vpn_configs_keyboard(configs, sub_id)` | `admin/external_vpn.py` — серверы с вкл/выкл |
+
+**`main_menu_keyboard` логика кнопок:**
+- Всегда: Оплатить, Мои ключи, Рефералы, Поддержка (adjust 1,1,2)
+- `not has_active_sub` → + Бесплатная подписка
+- `not has_email` → + Привязать Email
+
+---
+
+## States (FSM)
+
+| Файл | Класс | Состояния |
+|---|---|---|
+| `payment_states.py` | `PromoApplyFSM` | `awaiting_code` |
+| `email_link_states.py` | `EmailLinkFSM` | `awaiting_email`, `awaiting_code` |
+| `support_states.py` | `SupportFSM` | `in_chat` |
+| `admin_states.py` | `AdminUserFSM` | `awaiting_user_id`, `awaiting_days` |
+| `tariff_states.py` | `TariffFSM` | `awaiting_name`, `awaiting_price`, `awaiting_duration`, `editing_*` |
+| `promo_states.py` | `PromoFSM` | `awaiting_code`, `awaiting_value`, `awaiting_uses` |
+| `broadcast_states.py` | `BroadcastFSM` | `awaiting_text`, `awaiting_promo` |
+| `channel_states.py` | `ChannelFSM` | `awaiting_channel_id`, `awaiting_title`, `awaiting_invite_link` |
+| `external_vpn_states.py` | `ExternalVpnFSM` | `waiting_url`, `waiting_name`, `selecting_servers`, `waiting_raw_configs` |
+
+---
+
+## Filters & Middlewares
+
+| Файл | Что делает |
+|---|---|
+| `filters/admin.py` — `IsAdmin` | Проверяет `event.from_user.id in config.tg_bot.admin_ids` |
+| `middlewares/flood.py` — `ThrottlingMiddleware` | Антиспам: L1=0.5s, L2=1.5s, предупреждение "Не спамь!" |
+| `middlewares/support_timeout.py` | Автоматически закрывает чат поддержки по таймауту |
+| `middlewares/callback_answer.py` | Автоматически отвечает на callback queries |
+
+---
+
+## Внешние VPN — архитектура
+
+Система подмешивания конфигов сторонних VPN-провайдеров в подписки пользователей.
+
+**Таблицы БД** (`db.py`):
+- `ExternalSubscription` — источник (`id`, `name`, `url`, `is_active`, `added_at`)
+- `ExternalConfig` — сервер (`id`, `subscription_id` FK CASCADE, `name`, `raw_link`, `is_active`, `added_at`)
+
+**Репозитории** (`database/repositories/external_vpn.py`):
+- `ExternalSubscriptionRepository` — CRUD источников
+- `ExternalConfigRepository` — `create_many()`, `get_active()` (JOIN с подпиской), `toggle_active()`, `delete()`
+
+**Subscription Proxy** (`webapp/routers/subscription.py`):
+- `GET /sub/{marzban_username}` — nginx направляет сюда вместо Marzban
+- Запрашивает оригинальную подписку из `http://marzban:8002/sub/...`
+- Если `user.subscription_end_date > now()` → добавляет `ExternalConfig.raw_link` активных конфигов
+- Возвращает объединённый base64-список
+- URL для пользователей **не меняется** — `https://domain:8443/sub/username`
+
+**HWID-заголовки** для запросов к внешним подпискам:
+```
+User-Agent: HappProxy/2.1.6 (Linux; Bot)
+x-hwid: <UUID5 from "vpn-bot-fetcher">
+x-device-os: Linux
+x-ver-os: 6.1
+x-device-model: Server
+```
+
+---
+
+## Паттерны, используемые повсеместно
+
+### Отправка / редактирование сообщений
+```python
+try:
+    await call.message.edit_text(text, reply_markup=kb)
+except TelegramBadRequest:
+    await call.message.delete()
+    await call.message.answer(text, reply_markup=kb)
+```
+
+### Получение sub_url из Marzban
+```python
+profile_data = await profile_service.get_profile(user_id)
+sub_url = get_user_attribute(profile_data.marzban_user, 'subscription_url', '')
+domain = profile_service._marzban._config.webhook.domain
+full_sub_url = f"https://{domain}:8443{sub_url}" if sub_url else ""
+```
+
+### Deeplink для импорта в Happ
+```python
+from utils.url import build_import_url
+import_url = build_import_url(full_sub_url)  # → happ://add/...redirect...
+```
+
+### FSM скидки в flow оплаты
+```python
+# Сохраняем
+await state.update_data(discount=percent, promo_code='CODE')
+# Читаем
+fsm_data = await state.get_data()
+discount = fsm_data.get("discount")
+```

@@ -2,32 +2,26 @@
 
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
+from tgbot.states.promo_states import PromoFSM
 from aiogram.types import Message, CallbackQuery
 from datetime import datetime, timedelta
 
 from loader import logger
-from database import requests as db
-from tgbot.keyboards.inline import (promo_codes_list_keyboard, promo_type_keyboard, 
-                                    cancel_fsm_keyboard, back_to_promo_list_keyboard) # Нужны новые клавиатуры
+from tgbot.services import promo_service
+from tgbot.keyboards.inline import (promo_codes_list_keyboard, promo_type_keyboard,
+                                    cancel_fsm_keyboard, back_to_promo_list_keyboard)
 
 admin_promo_router = Router()
-
-class PromoFSM(StatesGroup):
-    get_code = State()
-    get_type = State()
-    get_value = State()
-    get_max_uses = State()
 
 async def show_promo_codes_list(event: types.Message | types.CallbackQuery):
     """
     Универсальная функция для отображения списка промокодов.
     Работает и с Message, и с CallbackQuery.
     """
-    codes = await db.get_all_promo_codes()
+    codes = await promo_service.get_all()
     text = "🎁 <b>Управление промокодами</b>"
     reply_markup = promo_codes_list_keyboard(list(codes))
-    
+
     # Отправляем или редактируем сообщение
     if isinstance(event, types.CallbackQuery):
         try:
@@ -49,7 +43,7 @@ async def promo_codes_menu_callback(call: CallbackQuery):
 @admin_promo_router.callback_query(F.data.startswith("admin_delete_promo_"))
 async def delete_promo(call: CallbackQuery):
     promo_id = int(call.data.split("_")[3])
-    await db.delete_promo_code(promo_id)
+    await promo_service.delete(promo_id)
     await call.answer("Промокод удален", show_alert=True)
     await show_promo_codes_list(call)
 
@@ -65,7 +59,7 @@ async def add_promo_start(call: CallbackQuery, state: FSMContext):
 
 @admin_promo_router.message(PromoFSM.get_code)
 async def add_promo_code(message: Message, state: FSMContext):
-    if await db.get_promo_code(message.text):
+    if await promo_service.get_by_code(message.text):
         await message.answer("Такой промокод уже существует. Введите другой.")
         return
     await state.update_data(code=message.text)
@@ -77,7 +71,7 @@ async def add_promo_type(call: CallbackQuery, state: FSMContext):
     promo_type = call.data.split("_")[2]
     await state.update_data(type=promo_type)
     await state.set_state(PromoFSM.get_value)
-    
+
     if promo_type == "days":
         await call.message.edit_text("<b>Шаг 3/4:</b> Введите количество бонусных дней (целое число).")
     elif promo_type == "discount":
@@ -97,11 +91,11 @@ async def add_promo_max_uses(message: Message, state: FSMContext):
     if not message.text.isdigit():
         await message.answer("Ошибка. Введите целое число.")
         return
-    
+
     data = await state.get_data()
     promo_type = data['type']
-    
-    await db.create_promo_code(
+
+    await promo_service.create(
         code=data['code'],
         bonus_days=data['value'] if promo_type == 'days' else 0,
         discount_percent=data['value'] if promo_type == 'discount' else 0,
@@ -109,7 +103,7 @@ async def add_promo_max_uses(message: Message, state: FSMContext):
     )
     await state.clear()
     await message.answer("✅ Промокод успешно создан!")
-    
+
     # Показываем обновленный список
     fake_call = CallbackQuery(id="fake_call", from_user=message.from_user, chat_instance="", message=message)
     await show_promo_codes_list(fake_call)

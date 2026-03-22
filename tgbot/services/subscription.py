@@ -2,15 +2,14 @@
 
 from aiogram import Bot
 from aiogram.enums import ChatMemberStatus
-from typing import List
-from database import requests as db
+from database import channel_repo
 
 async def check_subscription(bot: Bot, user_id: int) -> bool:
     """
     Проверяет, подписан ли пользователь на все каналы из БД.
     Возвращает True, если подписан на все, иначе False.
     """
-    required_channels = await db.get_all_channels()
+    required_channels = await channel_repo.get_all()
     if not required_channels:
         return True # Если каналов в списке нет, проверка пройдена
 
@@ -22,5 +21,5 @@ async def check_subscription(bot: Bot, user_id: int) -> bool:
         except Exception:
             # Если бот не админ в канале или ID неверный, считаем, что пользователь не подписан
             return False
-            
+
     return True # Если циклы завершились, пользователь подписан на все

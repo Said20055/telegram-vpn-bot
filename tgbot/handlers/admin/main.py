@@ -1,13 +1,11 @@
 # tgbot/handlers/admin/main.py
-import asyncio
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest
-from marzban.init_client import MarzClientCache
 from tgbot.filters.admin import IsAdmin
 from tgbot.keyboards.inline import admin_main_menu_keyboard
-from database import requests as db 
+from tgbot.services import admin_stats_service
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from loader import logger
 
@@ -23,29 +21,28 @@ async def admin_main_menu(call: CallbackQuery):
     await call.message.edit_text("Добро пожаловать в админ-панель!", reply_markup=admin_main_menu_keyboard())
 
 @admin_main_router.callback_query(F.data == "admin_stats")
-async def admin_stats_handler(call: CallbackQuery, marzban: MarzClientCache):
+async def admin_stats_handler(call: CallbackQuery):
     """Показывает расширенную статистику с разбивкой по узлам."""
     await call.answer("Собираю статистику с серверов...")
-    
-    # --- 1. Сначала выполняем все СИНХРОННЫЕ запросы к нашей БД ---
-    total_users = await db.count_all_users()
-    active_subs = await db.count_active_subscriptions()
-    first_payments_total = await db.count_users_with_first_payment()
-    users_today = await db.count_new_users_for_period(days=1)
-    users_week = await db.count_new_users_for_period(days=7)
-    users_month = await db.count_new_users_for_period(days=30)
-    
-    # --- 2. Затем параллельно выполняем все АСИНХРОННЫЕ запросы к API Marzban ---
-    # Теперь мы передаем в gather уже вызванные асинхронные функции
-    system_stats = await marzban.get_system_stats()
-    nodes = await marzban.get_nodes()
-    
+
+    # --- Получаем все данные через сервис ---
+    stats = await admin_stats_service.get_dashboard_stats()
+
+    total_users = stats["total_users"]
+    active_subs = stats["active_subs"]
+    first_payments_total = stats["first_payments"]
+    users_today = stats["users_today"]
+    users_week = stats["users_week"]
+    users_month = stats["users_month"]
+    system_stats = stats["system_stats"]
+    nodes = stats["nodes"]
+
     # --- 2. Формируем текст ---
-    
+
     # Общий онлайн (самое точное число)
     online_total = system_stats.get('online_users', 'н/д')
     # Онлайн на основном сервере (в v0.8.4 это часто то же самое, что и общий)
-    host_online = system_stats.get('users_online', online_total) 
+    host_online = system_stats.get('users_online', online_total)
 
     text_parts = [
         "📊 <b>Расширенная статистика</b>\n",
@@ -59,6 +56,12 @@ async def admin_stats_handler(call: CallbackQuery, marzban: MarzClientCache):
         "<b>Конверсия:</b>",
         f"└ Всего первых оплат: <b>{first_payments_total}</b>",
         "",
+        "<b>Доход:</b>",
+        f"├ Сегодня: <b>{stats['revenue_today']['revenue']:.2f} RUB</b> ({stats['revenue_today']['count']} платежей)",
+        f"├ За неделю: <b>{stats['revenue_week']['revenue']:.2f} RUB</b> ({stats['revenue_week']['count']})",
+        f"├ За месяц: <b>{stats['revenue_month']['revenue']:.2f} RUB</b> ({stats['revenue_month']['count']})",
+        f"└ Всего: <b>{stats['revenue_total']['revenue']:.2f} RUB</b> ({stats['revenue_total']['count']})",
+        "",
         "<b>Серверы Marzban (v0.8.4):</b>",
         f"└ 🖥️ Онлайн на основном сервере: <b>{host_online}</b>\n", # Показываем онлайн хоста
         "<b>Подключенные узлы (Nodes):</b>",
@@ -71,14 +74,14 @@ async def admin_stats_handler(call: CallbackQuery, marzban: MarzClientCache):
             node_status = node.get('status', 'неизвестен').capitalize()
             # Иконка в зависимости от статуса
             status_icon = "✅" if node_status == 'Connected' else "❌"
-            
+
             is_last = (i == len(nodes) - 1)
             prefix = "└─" if is_last else "├─"
-            
+
             text_parts.append(f"{prefix} {status_icon} {node_name}: <code>{node_status}</code>")
     else:
         text_parts.append("└─ 🤷‍♂️ Внешние узлы не настроены.")
-    
+
     text = "\n".join(text_parts)
 
     # Клавиатура остается такой же
@@ -86,7 +89,7 @@ async def admin_stats_handler(call: CallbackQuery, marzban: MarzClientCache):
     stats_kb.button(text="🔄 Обновить", callback_data="admin_stats")
     stats_kb.button(text="⬅️ Назад", callback_data="admin_main_menu")
     stats_kb.adjust(1)
-    
+
     try:
         # Пытаемся отредактировать сообщение
         await call.message.edit_text(text, reply_markup=stats_kb.as_markup())

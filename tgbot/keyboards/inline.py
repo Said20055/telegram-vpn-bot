@@ -2,43 +2,77 @@
 
 from typing import List
 from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardMarkup
-from urllib.parse import quote_plus
 
 # Импортируем модели только для аннотации типов, чтобы избежать циклических импортов
 from db import Tariff, PromoCode, Channel
+from utils.url import build_import_url
 
 
 # =============================================================================
 # === 1. КЛАВИАТУРЫ ДЛЯ ПОЛЬЗОВАТЕЛЕЙ (ОСНОВНОЕ МЕНЮ) ===
 # =============================================================================
 
-def main_menu_keyboard() -> InlineKeyboardMarkup:
-    """Главная клавиатура, которая будет показываться пользователю в основном меню."""
+def main_menu_keyboard(has_active_sub: bool = True, has_email: bool = True) -> InlineKeyboardMarkup:
+    """Главная клавиатура пользователя. Условные кнопки зависят от статуса подписки и email."""
     builder = InlineKeyboardBuilder()
-    builder.button(text='💎 Продлить / Оплатить', callback_data='buy_subscription')
-    builder.button(text='👤 Мой профиль', callback_data='my_profile')
-    builder.button(text='🔑 Мои ключи', callback_data='my_keys')
-    builder.button(text='🤝 Реферальная программа', callback_data='referral_program')
-    builder.button(text="📲 Инструкция по подключению", callback_data="instruction_info")
-    builder.button(text="🎁 Промокод", callback_data="enter_promo_code")
+    builder.button(text='💎 Оплатить', callback_data='buy_subscription')
+    builder.button(text='🛜 Подключиться', callback_data='my_keys')
+    builder.button(text='👥 Пригласи друга', callback_data='referral_program')
     builder.button(text="💬 Поддержка", callback_data="support_chat_start")
-    builder.button(text="🌟 Бесплатная подписка", callback_data="start_trial_process")
-    builder.adjust(1, 1, 2, 2, 1) # Немного изменил расположение для симметрии
+    rows = [1, 1, 2]
+    if not has_active_sub:
+        builder.button(text="🌟 Бесплатная подписка", callback_data="start_trial_process")
+        rows.append(1)
+    if not has_email:
+        builder.button(text="📧 Привязать Email", callback_data="link_email")
+        rows.append(1)
+    builder.adjust(*rows)
+    return builder.as_markup()
+
+
+def onboarding_subscribe_keyboard(channels: List[Channel]) -> InlineKeyboardMarkup:
+    """Клавиатура для первого шага онбординга — подписка на каналы."""
+    builder = InlineKeyboardBuilder()
+    for i, channel in enumerate(channels):
+        builder.button(text=f"📢 {channel.title}", url=channel.invite_link)
+    builder.button(text="✅ Я подписался, продолжить", callback_data="onboarding_check_sub")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def onboarding_download_app_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для второго шага — скачать приложение Happ."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📱 iOS (App Store)", url="https://apps.apple.com/app/happ-proxy-utility/id6504287215")
+    builder.button(text="🤖 Android (Google Play)", url="https://play.google.com/store/apps/details?id=com.happproxy.app")
+    builder.button(text="➡️ Приложение установлено", callback_data="onboarding_app_installed")
+    builder.adjust(2, 1)
+    return builder.as_markup()
+
+
+def onboarding_import_keyboard(subscription_url: str) -> InlineKeyboardMarkup:
+    """Клавиатура для третьего шага — импорт подключения в Happ."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📲 Подключить VPN в Happ", url=build_import_url(subscription_url))
+    builder.button(text="➡️ Перейти в главное меню", callback_data="back_to_main_menu")
+    builder.adjust(1)
     return builder.as_markup()
 
 
 def profile_keyboard(subscription_url: str) -> InlineKeyboardMarkup:
-    """Клавиатура для раздела "Мой профиль"."""
-    REDIRECT_PAGE_URL = "https://vac-service.ru:8443/import"
-    encoded_url = quote_plus(subscription_url)
-    deep_link = f"v2raytun://import/{encoded_url}"
-    final_redirect_url = f"{REDIRECT_PAGE_URL}?deeplink={quote_plus(deep_link)}"
-
+    """Клавиатура для раздела "Мой профиль" с полным набором действий."""
     builder = InlineKeyboardBuilder()
-    builder.button(text="📲 Импортировать в V2RayTun", url=final_redirect_url)
+    builder.button(text="📲 Импортировать в Happ", url=build_import_url(subscription_url))
     builder.button(text="🔄 Обновить", callback_data="my_profile")
     builder.button(text="⬅️ Назад в меню", callback_data="back_to_main_menu")
     builder.adjust(1)
+    return builder.as_markup()
+
+
+def simple_profile_keyboard() -> InlineKeyboardMarkup:
+    """Простая клавиатура профиля."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text='👤 Мой профиль', callback_data='my_profile')
     return builder.as_markup()
 
 
@@ -55,12 +89,23 @@ def tariffs_keyboard(tariffs: list[Tariff], promo_procent: int = 0) -> InlineKey
     else:
         for tariff in tariffs:
             builder.button(
-            text=f"{tariff.name} - {tariff.price} RUB",
-            callback_data=f"select_tariff_{tariff.id}"
-        )
-        builder.button(text="⬅️ Назад в главное меню", callback_data="back_to_main_menu")
-    
+                text=f"{tariff.name} - {tariff.price} RUB",
+                callback_data=f"select_tariff_{tariff.id}"
+            )
+        builder.button(text="🎁 У меня есть промокод", callback_data="enter_promo_code")
+    builder.button(text="💳 История платежей", callback_data="my_payments")
+    builder.button(text="⬅️ Назад в главное меню", callback_data="back_to_main_menu")
     builder.adjust(1)
+    return builder.as_markup()
+
+
+def keys_screen_keyboard(import_url: str) -> InlineKeyboardMarkup:
+    """Клавиатура экрана 'Мои ключи': импорт в Happ, инструкция, назад."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📲 Импортировать в Happ", url=import_url)
+    builder.button(text="📖 Инструкция", callback_data="instruction_info")
+    builder.button(text="⬅️ Назад в меню", callback_data="back_to_main_menu")
+    builder.adjust(1, 2)
     return builder.as_markup()
 
 
@@ -81,11 +126,6 @@ def close_support_chat_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def single_key_view_keyboard():
-    """Клавиатура для возврата к списку ключей."""
-    builder = InlineKeyboardBuilder()
-    builder.button(text="⬅️ Назад к списку ключей", callback_data="my_keys")
-    return builder.as_markup()
 # =============================================================================
 # === 2. КЛАВИАТУРЫ ДЛЯ АДМИН-ПАНЕЛИ ===
 # =============================================================================
@@ -98,6 +138,7 @@ def admin_main_menu_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="📢 Управление каналами", callback_data="admin_channels_menu")
     builder.button(text="💳 Управление тарифами", callback_data="admin_tariffs_menu")
     builder.button(text="🎁 Промокоды", callback_data="admin_promo_codes")
+    builder.button(text="🌐 Внешние VPN", callback_data="admin_ext_vpn")
     builder.button(text="📤 Рассылка", callback_data="admin_broadcast")
     builder.button(text="⬅️ Выйти из админ-панели", callback_data="back_to_main_menu")
     builder.adjust(1)
@@ -109,6 +150,7 @@ def user_manage_keyboard(user_id: int) -> InlineKeyboardMarkup:
     """Клавиатура для управления конкретным пользователем."""
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Добавить дни", callback_data=f"admin_add_days_{user_id}")
+    builder.button(text="💳 История платежей", callback_data=f"admin_payments_{user_id}")
     builder.button(text="🔄 Сбросить ключ", callback_data=f"admin_reset_user_{user_id}")
     builder.button(text="🗑 Удалить пользователя", callback_data=f"admin_delete_user_{user_id}")
     builder.button(text="⬅️ Назад к поиску", callback_data="admin_users_menu")
@@ -266,4 +308,95 @@ def back_to_promo_list_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура для возврата к списку промокодов."""
     builder = InlineKeyboardBuilder()
     builder.button(text="⬅️ К списку промокодов", callback_data="admin_promo_codes")
+    return builder.as_markup()
+
+
+# =============================================================================
+# === 4. КЛАВИАТУРЫ ДЛЯ ВНЕШНИХ VPN-КОНФИГОВ ===
+# =============================================================================
+
+def external_vpn_menu_keyboard(subs_count: int) -> InlineKeyboardMarkup:
+    """Главное меню управления внешними VPN."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔗 Добавить по URL", callback_data="ext_vpn_add")
+    builder.button(text="📋 Вставить конфиги", callback_data="ext_vpn_add_raw")
+    if subs_count > 0:
+        builder.button(text="🖥️ Управление серверами", callback_data="ext_vpn_list_subs")
+    builder.button(text="⬅️ Назад в админ-меню", callback_data="admin_main_menu")
+    builder.adjust(2, 1, 1)
+    return builder.as_markup()
+
+
+def ext_vpn_server_selection_keyboard(
+    servers: list[dict],
+    selected_indices: set[int],
+    page: int = 0,
+    page_size: int = 8,
+) -> InlineKeyboardMarkup:
+    """
+    Клавиатура выбора серверов с пагинацией.
+    servers: [{name, raw_link}, ...]
+    selected_indices: set индексов выбранных серверов
+    """
+    builder = InlineKeyboardBuilder()
+    total = len(servers)
+    start = page * page_size
+    end = min(start + page_size, total)
+
+    for i in range(start, end):
+        icon = "✅" if i in selected_indices else "⬜"
+        name = servers[i]["name"][:40]
+        builder.button(text=f"{icon} {name}", callback_data=f"ext_vpn_toggle_{i}")
+
+    # Навигация — prev и next на одной строке если оба есть
+    nav_buttons = 0
+    if page > 0:
+        builder.button(text="◀️ Назад", callback_data=f"ext_vpn_page_{page - 1}")
+        nav_buttons += 1
+    if end < total:
+        builder.button(text="▶️ Вперёд", callback_data=f"ext_vpn_page_{page + 1}")
+        nav_buttons += 1
+
+    builder.button(text="✅ Выбрать все", callback_data="ext_vpn_select_all")
+    builder.button(text="💾 Сохранить выбранные", callback_data="ext_vpn_save")
+    builder.button(text="❌ Отмена", callback_data="admin_ext_vpn")
+
+    row_layout = [1] * (end - start)
+    if nav_buttons > 0:
+        row_layout.append(nav_buttons)
+    row_layout += [1, 1, 1]
+    builder.adjust(*row_layout)
+    return builder.as_markup()
+
+
+def ext_vpn_subscriptions_keyboard(subs) -> InlineKeyboardMarkup:
+    """Список источников подписок для управления."""
+    builder = InlineKeyboardBuilder()
+    for sub in subs:
+        icon = "✅" if sub.is_active else "❌"
+        builder.button(text=f"{icon} {sub.name}", callback_data=f"ext_vpn_sub_{sub.id}")
+    builder.button(text="⬅️ Назад", callback_data="admin_ext_vpn")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def ext_vpn_sub_manage_keyboard(sub_id: int, configs_count: int) -> InlineKeyboardMarkup:
+    """Управление конкретным источником подписки."""
+    builder = InlineKeyboardBuilder()
+    if configs_count > 0:
+        builder.button(text="🖥️ Серверы", callback_data=f"ext_vpn_configs_{sub_id}")
+    builder.button(text="🗑️ Удалить источник", callback_data=f"ext_vpn_del_sub_{sub_id}")
+    builder.button(text="⬅️ Назад к списку", callback_data="ext_vpn_list_subs")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def ext_vpn_configs_keyboard(configs, sub_id: int) -> InlineKeyboardMarkup:
+    """Список серверов конкретного источника с возможностью вкл/выкл."""
+    builder = InlineKeyboardBuilder()
+    for cfg in configs:
+        icon = "✅" if cfg.is_active else "❌"
+        builder.button(text=f"{icon} {cfg.name[:35]}", callback_data=f"ext_vpn_cfg_toggle_{cfg.id}")
+    builder.button(text="⬅️ Назад", callback_data=f"ext_vpn_sub_{sub_id}")
+    builder.adjust(1)
     return builder.as_markup()

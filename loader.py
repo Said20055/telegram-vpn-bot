@@ -58,5 +58,5 @@ bot = Bot(
 # Убедитесь, что для Marzban используется правильный внутренний или внешний URL.
 # Я оставлю ваш вариант, но это место требует внимания.
 
-base_url = f'https://{config.webhook.domain}/' if config.webhook.use_webhook else 'https://free_vpn_bot_marzban:8002'
+base_url = f'https://{config.webhook.domain}/' if config.webhook.use_webhook else 'https://marzban:8002'
 marzban_client = MarzClientCache(base_url, config, logger)

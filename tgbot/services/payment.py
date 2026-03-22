@@ -71,6 +71,18 @@ def create_payment(
     # Возвращаем ссылку на оплату и ID платежа
     return payment_obj.confirmation.confirmation_url, payment_obj.id
 
+def get_payment_url(yookassa_payment_id: str, shop_id: str = None, secret_key: str = None) -> str | None:
+    """Retrieve the confirmation URL for an existing YooKassa payment."""
+    if shop_id and secret_key:
+        Configuration.account_id = shop_id
+        Configuration.secret_key = secret_key
+
+    payment_obj = Payment.find_one(yookassa_payment_id)
+    if payment_obj and payment_obj.confirmation:
+        return payment_obj.confirmation.confirmation_url
+    return None
+
+
 def parse_webhook_notification(request_body: dict):
     try:
         return WebhookNotification(request_body)
