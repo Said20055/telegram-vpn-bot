@@ -7,10 +7,12 @@ webapp/routers/subscription.py
 """
 
 import base64
+import time
+from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import Response
 
 from database import external_config_repo
 from loader import logger
@@ -20,31 +22,64 @@ router = APIRouter()
 # Marzban subscription endpoint внутри Docker-сети (без SSL verify)
 _MARZBAN_BASE = "https://marzban:8002"
 
+# Заголовки Marzban которые пробрасываем клиенту
+_PASSTHROUGH_HEADERS = (
+    "subscription-userinfo",
+    "profile-update-interval",
+    "profile-title",
+    "profile-web-page-url",
+    "support-url",
+    "content-disposition",
+)
 
-@router.get("/sub/{marzban_username}", response_class=PlainTextResponse)
+
+@router.get("/sub/{marzban_username}")
 async def subscription_proxy(marzban_username: str):
     """
     1. Запрашивает подписку из Marzban напрямую по внутреннему адресу
-    2. Добавляет все активные внешние конфиги из БД
-    3. Возвращает объединённый base64-список
+    2. Пробрасывает оригинальные заголовки Marzban (subscription-userinfo и др.)
+    3. Проверяет статус подписки по subscription-userinfo
+    4. Если подписка активна — добавляет внешние VPN-конфиги
+    5. Если истекла — возвращает только Marzban + announce
     """
     marz_url = f"{_MARZBAN_BASE}/sub/{marzban_username}"
 
     # Получаем оригинальную подписку из Marzban
-    marz_content = ""
     try:
         async with httpx.AsyncClient(verify=False, timeout=10) as client:
             resp = await client.get(marz_url)
             resp.raise_for_status()
             marz_content = resp.text.strip()
+            marz_headers = resp.headers
     except httpx.HTTPError as e:
         logger.warning(f"[sub_proxy] Marzban request failed for {marzban_username}: {e}")
-        return PlainTextResponse("", media_type="text/plain; charset=utf-8")
+        return Response("", media_type="text/plain; charset=utf-8")
+
+    # Собираем заголовки для ответа (проброс из Marzban)
+    response_headers = {}
+    for hdr in _PASSTHROUGH_HEADERS:
+        if hdr in marz_headers:
+            response_headers[hdr] = marz_headers[hdr]
+
+    # Проверяем статус подписки
+    sub_active = _is_subscription_active(marz_headers.get("subscription-userinfo", ""))
+
+    if not sub_active:
+        response_headers["announce"] = quote("Ваша подписка истекла. Продлите подписку для доступа ко всем серверам.")
+        return Response(
+            marz_content,
+            media_type="text/plain; charset=utf-8",
+            headers=response_headers,
+        )
 
     # Получаем активные внешние конфиги
     ext_configs = await external_config_repo.get_active()
     if not ext_configs:
-        return PlainTextResponse(marz_content, media_type="text/plain; charset=utf-8")
+        return Response(
+            marz_content,
+            media_type="text/plain; charset=utf-8",
+            headers=response_headers,
+        )
 
     # Декодируем Marzban base64 → список ссылок + добавляем внешние
     marz_links = _decode_links(marz_content)
@@ -53,7 +88,45 @@ async def subscription_proxy(marzban_username: str):
     combined = marz_links + ext_links
     encoded = base64.b64encode("\n".join(combined).encode("utf-8")).decode("utf-8")
 
-    return PlainTextResponse(encoded, media_type="text/plain; charset=utf-8")
+    return Response(
+        encoded,
+        media_type="text/plain; charset=utf-8",
+        headers=response_headers,
+    )
+
+
+def _is_subscription_active(userinfo_header: str) -> bool:
+    """Проверяет активность подписки по заголовку subscription-userinfo.
+
+    Формат: upload=123; download=456; total=10737418240; expire=1711234567
+    - expire > 0 и expire < now() → истекла по времени
+    - total > 0 и upload + download >= total → исчерпан трафик
+    - Если заголовок пуст или не парсится → считаем активной (safe fallback)
+    """
+    if not userinfo_header:
+        return True
+
+    parts = {}
+    for part in userinfo_header.split(";"):
+        part = part.strip()
+        if "=" in part:
+            key, _, value = part.partition("=")
+            try:
+                parts[key.strip()] = int(value.strip())
+            except ValueError:
+                continue
+
+    expire = parts.get("expire", 0)
+    if expire > 0 and expire < time.time():
+        return False
+
+    total = parts.get("total", 0)
+    if total > 0:
+        used = parts.get("upload", 0) + parts.get("download", 0)
+        if used >= total:
+            return False
+
+    return True
 
 
 _VPN_PREFIXES = ("vless://", "vmess://", "trojan://", "ss://", "hysteria2://", "hy2://", "tuic://")
@@ -73,5 +146,3 @@ def _decode_links(content: str) -> list[str]:
         return [line.strip() for line in decoded.splitlines() if line.strip()]
     except Exception:
         return lines
-
-
