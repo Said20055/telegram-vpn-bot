@@ -53,7 +53,7 @@ class MarzClientCache:
             if self._http_client:
                 await self._http_client.aclose()
             
-            self._http_client = httpx.AsyncClient(base_url=self._base_url, headers=headers, verify=False)
+            self._http_client = httpx.AsyncClient(base_url=self._base_url, headers=headers, verify=False, timeout=30.0)
             self._logger.info('New Marzban http client created.')
         return self._http_client
 
