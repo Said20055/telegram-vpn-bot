@@ -72,26 +72,44 @@ DUMP_LINES=$(wc -l < "$DUMP_FILE")
 DUMP_SIZE=$(du -sh "$DUMP_FILE" | cut -f1)
 echo "    ✅ Дамп сохранён: $DUMP_FILE ($DUMP_SIZE, $DUMP_LINES строк)"
 
-# ── Шаг 2: Закрываем соединения и пересоздаём локальную БД ───────────────────
+# ── Шаг 2: Определяем локального суперпользователя ───────────────────────────
 echo ""
 echo "2️⃣  Пересоздаю локальную БД..."
 
-docker exec vpn_postgres psql -U "$REMOTE_USER" -d postgres \
+# Пробуем подключиться как $REMOTE_USER, иначе падаем на postgres
+if docker exec vpn_postgres psql -U "$REMOTE_USER" -d postgres -c '\q' > /dev/null 2>&1; then
+  LOCAL_ADMIN="$REMOTE_USER"
+else
+  LOCAL_ADMIN="postgres"
+fi
+echo "    Локальный суперпользователь: $LOCAL_ADMIN"
+
+# Создаём роль удалённого пользователя в локальном postgres (если не существует)
+docker exec vpn_postgres psql -U "$LOCAL_ADMIN" -d postgres \
+  -c "DO \$\$ BEGIN
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$REMOTE_USER') THEN
+          CREATE ROLE \"$REMOTE_USER\" WITH LOGIN SUPERUSER PASSWORD '$REMOTE_PASS';
+        END IF;
+      END \$\$;" \
+  > /dev/null 2>&1 || true
+
+# Закрываем активные соединения с БД и пересоздаём её
+docker exec vpn_postgres psql -U "$LOCAL_ADMIN" -d postgres \
   -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$REMOTE_DB' AND pid <> pg_backend_pid();" \
   > /dev/null 2>&1 || true
 
-docker exec vpn_postgres psql -U "$REMOTE_USER" -d postgres \
+docker exec vpn_postgres psql -U "$LOCAL_ADMIN" -d postgres \
   -c "DROP DATABASE IF EXISTS \"$REMOTE_DB\";" \
-  -c "CREATE DATABASE \"$REMOTE_DB\";" \
+  -c "CREATE DATABASE \"$REMOTE_DB\" OWNER \"$REMOTE_USER\";" \
   > /dev/null
 
-echo "    ✅ БД '$REMOTE_DB' пересоздана"
+echo "    ✅ БД '$REMOTE_DB' пересоздана (owner: $REMOTE_USER)"
 
 # ── Шаг 3: Восстановление ────────────────────────────────────────────────────
 echo ""
 echo "3️⃣  Восстанавливаю данные в локальный vpn_postgres..."
 
-docker exec -i vpn_postgres psql -U "$REMOTE_USER" -d "$REMOTE_DB" -q < "$DUMP_FILE"
+docker exec -i vpn_postgres psql -U "$LOCAL_ADMIN" -d "$REMOTE_DB" -q < "$DUMP_FILE"
 
 echo "    ✅ Данные восстановлены"
 
