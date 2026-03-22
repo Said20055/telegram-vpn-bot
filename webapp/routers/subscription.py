@@ -8,7 +8,6 @@ webapp/routers/subscription.py
 
 import base64
 import time
-from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter
@@ -32,6 +31,14 @@ _PASSTHROUGH_HEADERS = (
     "content-disposition",
 )
 
+_ANNOUNCE_EXPIRED = "Ваша подписка истекла. Продлите подписку для доступа ко всем серверам."
+_ANNOUNCE_ACTIVE = "Не работает VPN? Нажми на кнопку 🔄 и проверь каждый вариант"
+
+
+def _b64_header(text: str) -> str:
+    """Кодирует текст в формат base64: для HTTP-заголовков Happ (кириллица)."""
+    return "base64:" + base64.b64encode(text.encode("utf-8")).decode("ascii")
+
 
 @router.get("/sub/{marzban_username}")
 async def subscription_proxy(marzban_username: str):
@@ -39,8 +46,8 @@ async def subscription_proxy(marzban_username: str):
     1. Запрашивает подписку из Marzban напрямую по внутреннему адресу
     2. Пробрасывает оригинальные заголовки Marzban (subscription-userinfo и др.)
     3. Проверяет статус подписки по subscription-userinfo
-    4. Если подписка активна — добавляет внешние VPN-конфиги
-    5. Если истекла — возвращает только Marzban + announce
+    4. Если подписка активна — добавляет внешние VPN-конфиги + announce
+    5. Если истекла — возвращает только Marzban + announce об истечении
     """
     marz_url = f"{_MARZBAN_BASE}/sub/{marzban_username}"
 
@@ -65,12 +72,15 @@ async def subscription_proxy(marzban_username: str):
     sub_active = _is_subscription_active(marz_headers.get("subscription-userinfo", ""))
 
     if not sub_active:
-        response_headers["announce"] = quote("Ваша подписка истекла. Продлите подписку для доступа ко всем серверам.")
+        response_headers["announce"] = _b64_header(_ANNOUNCE_EXPIRED)
         return Response(
             marz_content,
             media_type="text/plain; charset=utf-8",
             headers=response_headers,
         )
+
+    # Announce для активных пользователей
+    response_headers["announce"] = _b64_header(_ANNOUNCE_ACTIVE)
 
     # Получаем активные внешние конфиги
     ext_configs = await external_config_repo.get_active()
