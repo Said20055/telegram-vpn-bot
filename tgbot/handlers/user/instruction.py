@@ -6,23 +6,12 @@ from aiogram.types import Message, CallbackQuery, InputFile, BufferedInputFile
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 # Импортируем клавиатуру для кнопки "Назад"
-from tgbot.keyboards.inline import back_to_main_menu_keyboard
+from tgbot.keyboards.inline import os_client_keyboard
 from loader import config, logger # Импортируем конфиг, чтобы взять оттуда ID видео
 
 instruction_router = Router(name="instruction")
 
-# --- 1. Клавиатура со ссылками на клиенты ---
-def os_client_keyboard():
-    """Создает клавиатуру со ссылками на рекомендованные клиенты для VLESS."""
-    builder = InlineKeyboardBuilder()
-    builder.button(text="👤 Мой профиль", callback_data="my_profile")
-    builder.button(text="🤖 Android (V2RayTun)", url="https://play.google.com/store/apps/details?id=com.v2raytun.android")
-    builder.button(text="🍏 iOS (V2RayTun)", url="https://apps.apple.com/ru/app/v2raytun/id6476628951")
-    builder.button(text="💻 Windows (NekoBox)", url="https://github.com/MatsuriDayo/nekobox/releases/latest")
-    builder.button(text="🍎 macOS (V2rayU)", url="https://github.com/yanue/V2rayU/releases/latest")
-    builder.button(text="⬅️ Назад в главное меню", callback_data="back_to_main_menu")
-    builder.adjust(1) # Располагаем кнопки по одной в ряд
-    return builder.as_markup()
+
 
 
 # --- 2. Универсальная функция для показа инструкции ---
@@ -36,15 +25,19 @@ async def show_instruction_message(event: types.Message | types.CallbackQuery):
     
     # Новый, упрощенный текст инструкции
     text = (
-        "📲 <b>Инструкция по подключению (Авто-импорт)</b>\n\n"
-        "1️⃣ <b>Перейдите в профиль</b>\n"
-        "Откройте раздел «👤 Мой профиль» в главном меню.\n\n"
-        "2️⃣ <b>Нажмите на кнопку</b>\n"
-        "Под QR-кодом и ссылкой найдите и нажмите кнопку <b>«📲 Импортировать подписку»</b>.\n\n"
-        "3️⃣ <b>Разрешите открытие</b>\n"
-        "Вас перенаправит на веб-страницу, которая предложит открыть приложение (V2RayTUN или другое). Согласитесь.\n\n"
-        "4️⃣ <b>Подключитесь</b>\n"
-        "Подписка будет добавлена автоматически! Осталось только обновить список серверов и нажать кнопку подключения.\n\n"
+        "📲 <b>Инструкция по подключению</b>\n\n"
+        "0️⃣ <b>Установите приложение Happ</b>\n"
+        "Выберите своё устройство из кнопок ниже и установите приложение.\n\n"
+        "1️⃣ <b>Перейдите в «Мои ключи»</b>\n"
+        "В главном меню нажмите кнопку <b>«🔑 Мои ключи»</b>.\n\n"
+        "2️⃣ <b>Нажмите «Импортировать в Happ»</b>\n"
+        "Нажмите кнопку <b>«📲 Импортировать в Happ»</b> — откроется страница, "
+        "которая автоматически запустит приложение Happ и добавит подписку.\n\n"
+        "3️⃣ <b>Подключитесь</b>\n"
+        "В приложении Happ выберите сервер и нажмите кнопку подключения. Готово!\n\n"
+        "❓ <b>Не работает авто-импорт?</b>\n"
+        "Скопируйте ссылку из раздела «Мои ключи» и добавьте её вручную через "
+        "<b>Настройки → Подписки → Добавить</b> в приложении Happ.\n"
     )
     
     chat_id = event.from_user.id

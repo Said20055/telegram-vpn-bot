@@ -17,7 +17,7 @@ def main_menu_keyboard(has_active_sub: bool = True, has_email: bool = True) -> I
     builder = InlineKeyboardBuilder()
     builder.button(text='💎 Оплатить', callback_data='buy_subscription')
     builder.button(text='🛜 Подключиться', callback_data='my_keys')
-    builder.button(text='👥 Пригласи друга', callback_data='referral_program')
+    builder.button(text='👥 Пригласить друга', callback_data='referral_program')
     builder.button(text="💬 Поддержка", callback_data="support_chat_start")
     rows = [1, 1, 2]
     if not has_active_sub:
@@ -123,6 +123,19 @@ def close_support_chat_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура для закрытия чата с поддержкой."""
     builder = InlineKeyboardBuilder()
     builder.button(text="❌ Завершить диалог", callback_data="support_chat_close")
+    return builder.as_markup()
+
+# --- 1. Клавиатура со ссылками на клиенты ---
+def os_client_keyboard():
+    """Создает клавиатуру со ссылками на рекомендованные клиенты для VLESS."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="👤 Мой профиль", callback_data="my_profile")
+    builder.button(text="🤖 Android (Happ)", url="https://play.google.com/store/apps/details?id=com.happproxy")
+    builder.button(text="🍏 iOS (Happ)", url="https://apps.apple.com/us/app/happ-proxy-utility/id6504287215")
+    builder.button(text="💻 Windows (Happ)", url="https://github.com/Happ-proxy/happ-desktop/releases")
+    builder.button(text="🍎 macOS (Happ)", url="https://apps.apple.com/us/app/happ-proxy-utility/id6504287215?platform=mac")
+    builder.button(text="⬅️ Назад в главное меню", callback_data="back_to_main_menu")
+    builder.adjust(1) # Располагаем кнопки по одной в ряд
     return builder.as_markup()
 
 
