@@ -140,7 +140,7 @@ async def yookassa_webhook_handler(request: web.Request):
                 try:
                     await bot.send_message(
                         result.referrer_id,
-                        f"🎉 Ваш реферал совершил первую оплату! Вам начислено <b>30 бонусных дней</b>."
+                        f"🎉 Ваш реферал совершил первую оплату! Вам начислено <b>14 бонусных дней</b>."
                     )
                 except Exception as e:
                     logger.error(f"Failed to notify referrer {result.referrer_id}: {e}")
@@ -179,8 +179,18 @@ async def yookassa_webhook_handler(request: web.Request):
         # === ОТМЕНА ===
         elif event_type == 'payment.canceled':
             from database import payment_repo
+            payment = await payment_repo.get_by_yookassa_id(yookassa_payment_id)
             await payment_repo.update_status(yookassa_payment_id, 'cancelled')
             logger.info(f"Payment {yookassa_payment_id} cancelled by YooKassa")
+            if payment and payment.user_id > 0:
+                try:
+                    await bot.send_message(
+                        payment.user_id,
+                        "⏰ Ваш счёт на оплату был автоматически отменён, так как не был оплачен в течение 10 минут.\n\n"
+                        "Вы можете создать новый платёж в любое время."
+                    )
+                except Exception:
+                    pass
             return web.Response(status=200)
 
         else:

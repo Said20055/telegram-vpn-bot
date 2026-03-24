@@ -17,7 +17,7 @@ class ReferralService:
         logger.info(f"Referral bonus: user {user_id} got {bonus_days} days via referrer {referrer_id}")
         return result
 
-    async def process_first_payment_bonus(self, user_who_paid_id: int, bonus_days: int = 30) -> int | None:
+    async def process_first_payment_bonus(self, user_who_paid_id: int, bonus_days: int = 14) -> int | None:
         """
         Бонус рефереру при первой оплате.
         Возвращает referrer_id если бонус начислен, None иначе.

@@ -105,7 +105,7 @@ def keys_screen_keyboard(import_url: str) -> InlineKeyboardMarkup:
     builder.button(text="📲 Импортировать в Happ", url=import_url)
     builder.button(text="📖 Инструкция", callback_data="instruction_info")
     builder.button(text="⬅️ Назад в меню", callback_data="back_to_main_menu")
-    builder.adjust(1, 2)
+    builder.adjust(1)
     return builder.as_markup()
 
 

@@ -76,13 +76,6 @@ class PaymentRepository:
             result = await session.execute(stmt)
             return result.scalars().all()
 
-    async def cancel_stale(self, minutes: int = 30) -> list[Payment]:
-        """Cancel pending payments older than N minutes. Returns cancelled payments."""
-        stale = await self.get_pending_older_than(minutes)
-        for p in stale:
-            await self.update_status(p.yookassa_payment_id, 'cancelled')
-        return stale
-
     async def get_revenue_stats(self, days: int) -> dict:
         async with self._session_maker() as session:
             since = datetime.now() - timedelta(days=days)
