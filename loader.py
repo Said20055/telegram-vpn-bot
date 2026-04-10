@@ -4,7 +4,6 @@ from aiogram import Bot
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiohttp_socks import ProxyConnector
 
 from config import load_config  # Убедитесь, что путь до конфига правильный
 from marzban.init_client import MarzClientCache
@@ -48,8 +47,7 @@ logger = setup_logging()
 
 # 2. Объект бота с вашими настройками
 if config.tg_bot.proxy_url:
-    _connector = ProxyConnector.from_url(config.tg_bot.proxy_url)
-    _session = AiohttpSession(connector=_connector)
+    _session = AiohttpSession(proxy=config.tg_bot.proxy_url)
     bot = Bot(
         token=config.tg_bot.token,
         session=_session,
