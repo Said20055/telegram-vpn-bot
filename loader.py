@@ -1,7 +1,7 @@
 import logging
 import betterlogging as bl
 from aiogram import Bot
-from aiogram.client.aiohttp import AiohttpSession
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiohttp_socks import ProxyConnector
