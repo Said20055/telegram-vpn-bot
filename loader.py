@@ -1,8 +1,10 @@
 import logging
 import betterlogging as bl
 from aiogram import Bot
+from aiogram.client.aiohttp import AiohttpSession
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiohttp_socks import ProxyConnector
 
 from config import load_config  # Убедитесь, что путь до конфига правильный
 from marzban.init_client import MarzClientCache
@@ -45,10 +47,19 @@ def setup_logging():
 logger = setup_logging()
 
 # 2. Объект бота с вашими настройками
-bot = Bot(
-    token=config.tg_bot.token,
-    default=DefaultBotProperties(parse_mode=ParseMode.HTML, link_preview_is_disabled=True)
-)
+if config.tg_bot.proxy_url:
+    _connector = ProxyConnector.from_url(config.tg_bot.proxy_url)
+    _session = AiohttpSession(connector=_connector)
+    bot = Bot(
+        token=config.tg_bot.token,
+        session=_session,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML, link_preview_is_disabled=True)
+    )
+else:
+    bot = Bot(
+        token=config.tg_bot.token,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML, link_preview_is_disabled=True)
+    )
 
 # 3. Клиент для Marzban API
 # Замечание: URL для клиента лучше формировать без тернарного оператора, 

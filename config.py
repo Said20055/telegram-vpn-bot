@@ -10,6 +10,7 @@ class TgBot:
     support_chat_id: int
     transaction_log_topic_id: int
     instruction_video_id: str | None
+    proxy_url: str | None
     @staticmethod
     def from_env(env: Env):
         token = env.str("BOT_TOKEN")
@@ -18,10 +19,12 @@ class TgBot:
         support_chat_id = env.int("SUPPORT_CHAT_ID")
         transaction_log_topic_id = env.int("TRANSACTION_LOG_TOPIC_ID")
         instruction_video_id = env.str("INSTRUCTION_VIDEO_ID", default=None)
+        proxy_url = env.str("TG_PROXY_URL", default=None)
         return TgBot(token=token, admin_ids=admin_ids,
                      support_chat_id=support_chat_id,
                      transaction_log_topic_id=transaction_log_topic_id,
-                     instruction_video_id=instruction_video_id)
+                     instruction_video_id=instruction_video_id,
+                     proxy_url=proxy_url)
 @dataclass
 class YooKassa:
     shop_id: str
