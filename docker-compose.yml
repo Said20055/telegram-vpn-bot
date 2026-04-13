@@ -65,6 +65,10 @@ services:
   marzban:
     image: gozargah/marzban:v0.8.4
     container_name: vpn_marzban
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
     restart: always
     dns:
       - 1.1.1.1
