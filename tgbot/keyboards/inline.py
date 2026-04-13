@@ -133,7 +133,7 @@ def os_client_keyboard():
     builder.button(text="🤖 Android (Happ)", url="https://play.google.com/store/apps/details?id=com.happproxy")
     builder.button(text="🍏 iOS (Happ)", url="https://apps.apple.com/us/app/happ-proxy-utility/id6504287215")
     builder.button(text="💻 Windows (Happ)", url="https://github.com/Happ-proxy/happ-desktop/releases")
-    builder.button(text="🍎 macOS (Happ)", url="https://apps.apple.com/us/app/happ-proxy-utility/id6504287215?platform=mac")
+    builder.button(text="🍎 mac OS (Happ)", url="https://apps.apple.com/us/app/happ-proxy-utility/id6504287215?platform=mac")
     builder.button(text="⬅️ Назад в главное меню", callback_data="back_to_main_menu")
     builder.adjust(1) # Располагаем кнопки по одной в ряд
     return builder.as_markup()
